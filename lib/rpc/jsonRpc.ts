@@ -43,6 +43,7 @@ export async function jsonRpcFetch<T>(
   const json = (await res.json()) as JsonRpcSuccess<T> | JsonRpcError;
   if ("error" in json) {
     const err = new Error(`RPC ${method} error: ${json.error.message}`);
+    (err as unknown as Record<string, unknown>).code = json.error.code;
     (err as unknown as Record<string, unknown>).data = json.error.data;
     throw err;
   }

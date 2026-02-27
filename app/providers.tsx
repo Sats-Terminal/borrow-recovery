@@ -75,10 +75,12 @@ function WalletBridgeProvider({ children }: { children: React.ReactNode }) {
   const hasInjectedProvider = useMemo(() => Boolean(getEthereum()), []);
 
   const connect = useCallback(async () => {
+    const injectedConnector = connectors.find((item) => item.type === "injected");
+    const walletConnectConnector = connectors.find((item) => item.type === "walletConnect");
     const candidateConnector =
-      (hasInjectedProvider
-        ? connectors.find((item) => item.type === "injected")
-        : undefined) ?? connectors[0];
+      hasInjectedProvider
+        ? (injectedConnector ?? walletConnectConnector ?? connectors[0])
+        : (walletConnectConnector ?? injectedConnector ?? connectors[0]);
     if (!candidateConnector) throw new Error("No wallet connector available.");
     await connectAsync({ connector: candidateConnector });
   }, [connectAsync, connectors, hasInjectedProvider]);

@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
 import { useWallet } from "./providers";
 
 export default function Home() {
+  const router = useRouter();
   const { address } = useWallet();
   const [walletIndex, setWalletIndex] = useState("");
 
@@ -77,7 +79,7 @@ export default function Home() {
               onChange={(e) => setWalletIndex(e.target.value.replace(/\D/g, ""))}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && walletIndex) {
-                  window.location.href = `/wallet/${walletIndex}`;
+                  router.push(`/wallet/${walletIndex}`);
                 }
               }}
             />

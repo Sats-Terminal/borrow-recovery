@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
 import { deriveKernelAddressV3_3FromEOA } from "@/lib/kernel/deriveKernelAddress";
@@ -16,6 +16,8 @@ type ScanRow = {
   deployedByChainId: Partial<Record<SupportedChainId, boolean>>;
 };
 
+const MAX_SCAN_RANGE_SIZE = 2_000;
+
 export default function ScanPage() {
   const router = useRouter();
   const { address, chainId, request, switchChain } = useWallet();
@@ -29,6 +31,14 @@ export default function ScanPage() {
   const [error, setError] = useState<string | null>(null);
   const [onlyDeployed, setOnlyDeployed] = useState(false);
   const cancelRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+      cancelRef.current = true;
+    };
+  }, []);
 
   const supportedChain = useMemo(() => getChainConfig(chainId), [chainId]);
 
@@ -64,6 +74,9 @@ export default function ScanPage() {
                 <label className="flex flex-col gap-2">
                   <span className="text-sm text-zinc-700 dark:text-zinc-300">Start index</span>
                   <input
+                    type="number"
+                    min={0}
+                    step={1}
                     className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
                     inputMode="numeric"
                     value={startIndex}
@@ -74,6 +87,9 @@ export default function ScanPage() {
                 <label className="flex flex-col gap-2">
                   <span className="text-sm text-zinc-700 dark:text-zinc-300">End index</span>
                   <input
+                    type="number"
+                    min={0}
+                    step={1}
                     className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
                     inputMode="numeric"
                     value={endIndex}
@@ -124,23 +140,32 @@ export default function ScanPage() {
                       setError("Invalid range.");
                       return;
                     }
+                    if (!Number.isInteger(startIndex) || !Number.isInteger(endIndex)) {
+                      setError("Range must use whole numbers.");
+                      return;
+                    }
                     if (startIndex < 0 || endIndex < 0 || endIndex < startIndex) {
                       setError("Range must be non-negative and end ≥ start.");
                       return;
                     }
-
-                    const indices: number[] = [];
-                    for (let i = startIndex; i <= endIndex; i++) indices.push(i);
-
-                    const baseRows: ScanRow[] = indices.map((i) => ({
-                      index: i,
-                      kernelAddress: deriveKernelAddressV3_3FromEOA(address, BigInt(i)),
-                      deployedByChainId: {},
-                    }));
-                    setRows(baseRows);
+                    if (endIndex - startIndex + 1 > MAX_SCAN_RANGE_SIZE) {
+                      setError(`Range too large. Max ${MAX_SCAN_RANGE_SIZE} indices per scan.`);
+                      return;
+                    }
 
                     setIsScanning(true);
                     try {
+                      const baseRows: ScanRow[] = [];
+                      for (let i = startIndex; i <= endIndex; i++) {
+                        baseRows.push({
+                          index: i,
+                          kernelAddress: deriveKernelAddressV3_3FromEOA(address, BigInt(i)),
+                          deployedByChainId: {},
+                        });
+                      }
+                      if (!mountedRef.current) return;
+                      setRows(baseRows);
+
                       for (const targetChainId of selectedChains) {
                         if (cancelRef.current) break;
 
@@ -184,11 +209,17 @@ export default function ScanPage() {
                           );
                         }
                       }
-                      setStatus(cancelRef.current ? "Scan cancelled." : "Scan complete.");
+                      if (mountedRef.current) {
+                        setStatus(cancelRef.current ? "Scan cancelled." : "Scan complete.");
+                      }
                     } catch (e) {
-                      setError(e instanceof Error ? e.message : "Scan failed.");
+                      if (mountedRef.current) {
+                        setError(e instanceof Error ? e.message : "Scan failed.");
+                      }
                     } finally {
-                      setIsScanning(false);
+                      if (mountedRef.current) {
+                        setIsScanning(false);
+                      }
                     }
                   }}
                 >

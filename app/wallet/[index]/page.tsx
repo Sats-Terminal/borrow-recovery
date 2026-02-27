@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CHAIN_ASSETS } from "@/lib/assets";
 import { getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
@@ -78,12 +78,15 @@ export default function WalletDetailPage() {
   const [copied, setCopied] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [zerodevInput, setZerodevInput] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshRequestIdRef = useRef(0);
+  const manualChainSelectionRef = useRef(false);
 
   const chain = useMemo(() => getChainConfig(selectedChainId), [selectedChainId]);
 
   const kernelAddress = useMemo(() => {
     if (!owner) return null;
-    if (!indexBigInt) return null;
+    if (indexBigInt === null) return null;
     return deriveKernelAddressV3_3FromEOA(owner, indexBigInt);
   }, [indexBigInt, owner]);
 
@@ -128,7 +131,7 @@ export default function WalletDetailPage() {
       if (cancelled) return;
 
       const deployedChain = results.find((id): id is SupportedChainId => id !== null);
-      if (deployedChain) {
+      if (deployedChain && !manualChainSelectionRef.current) {
         setSelectedChainId(deployedChain);
       }
       setAutoDetecting(false);
@@ -137,14 +140,25 @@ export default function WalletDetailPage() {
     return () => { cancelled = true; };
   }, [kernelAddress]);
 
+  useEffect(() => {
+    manualChainSelectionRef.current = false;
+  }, [kernelAddress]);
+
   const copyAddress = useCallback(() => {
     if (!kernelAddress) return;
-    navigator.clipboard.writeText(kernelAddress);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard
+      .writeText(kernelAddress)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {
+        setError("Could not copy address. Please copy it manually.");
+      });
   }, [kernelAddress]);
 
   const refresh = async () => {
+    if (isRefreshing) return;
     setError(null);
     setStatus(null);
     setAaveAccountData(null);
@@ -168,6 +182,10 @@ export default function WalletDetailPage() {
       return;
     }
 
+    const requestId = ++refreshRequestIdRef.current;
+    const isStale = () => refreshRequestIdRef.current !== requestId;
+    setIsRefreshing(true);
+
     const chainIdHex = (await request("eth_chainId")) as string;
     const current = typeof chainIdHex === "string" && chainIdHex.startsWith("0x") ? Number.parseInt(chainIdHex.slice(2), 16) : null;
     if (current !== selectedChainId) {
@@ -178,12 +196,14 @@ export default function WalletDetailPage() {
     setStatus("Reading onchain data…");
     try {
       const nativeBalHex = (await request("eth_getBalance", [kernelAddress, "latest"])) as string;
+      if (isStale()) return;
       setNativeBalance(BigInt(nativeBalHex));
 
       const [usdcBalRes, btcBalRes] = (await Promise.all([
         request("eth_call", [{ to: assets.usdc.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
         request("eth_call", [{ to: assets.btcCollateral.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
       ])) as [Hex, Hex];
+      if (isStale()) return;
 
       setUsdcBalance(decodeErc20BalanceOf(usdcBalRes));
       setBtcBalance(decodeErc20BalanceOf(btcBalRes));
@@ -194,12 +214,14 @@ export default function WalletDetailPage() {
             chain,
             walletAddress: kernelAddress,
           });
+          if (isStale()) return;
           setAaveSummary(summary);
         } catch {
           setAaveSummary(null);
         }
 
         const aaveRes = (await request("eth_call", [{ to: chain.aaveV3PoolAddress, data: encodeAaveGetUserAccountData(kernelAddress) }, "latest"])) as Hex;
+        if (isStale()) return;
         setAaveAccountData(decodeAaveGetUserAccountData(aaveRes));
       }
 
@@ -210,18 +232,24 @@ export default function WalletDetailPage() {
             market: MORPHO_BASE_CBBTC_USDC_MARKET,
             userAddress: kernelAddress,
           });
+          if (isStale()) return;
           setMorphoSummary(summary);
         } catch {
           setMorphoSummary(null);
         }
 
         const morphoRes = (await request("eth_call", [{ to: chain.morphoBlueAddress, data: encodeMorphoBluePosition(MORPHO_BASE_MARKETS.cbBTC_USDC.marketId, kernelAddress) }, "latest"])) as Hex;
+        if (isStale()) return;
         setMorphoPosition(decodeMorphoBluePosition(morphoRes));
       }
 
+      if (isStale()) return;
       setStatus("Done.");
     } catch (e) {
+      if (isStale()) return;
       setError(e instanceof Error ? e.message : "Failed to read positions.");
+    } finally {
+      if (!isStale()) setIsRefreshing(false);
     }
   };
 
@@ -311,10 +339,11 @@ export default function WalletDetailPage() {
                   value={selectedChainId}
                   onChange={async (e) => {
                     const newChainId = Number(e.target.value) as SupportedChainId;
-                    setSelectedChainId(newChainId);
                     setError(null);
+                    manualChainSelectionRef.current = true;
                     try {
                       await switchChain(newChainId);
+                      setSelectedChainId(newChainId);
                     } catch (err) {
                       setError(err instanceof Error ? err.message : "Failed to switch chain.");
                     }
@@ -330,9 +359,10 @@ export default function WalletDetailPage() {
                 <button
                   type="button"
                   className="inline-flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  disabled={isRefreshing}
                   onClick={refresh}
                 >
-                  Load positions
+                  {isRefreshing ? "Loading…" : "Load positions"}
                 </button>
                 </div>
               </div>
