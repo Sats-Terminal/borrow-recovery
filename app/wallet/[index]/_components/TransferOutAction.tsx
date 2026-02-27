@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
 import { getChainConfig, type SupportedChainId } from "@/lib/chains";
@@ -41,6 +41,26 @@ export function TransferOutAction(props: {
   const [error, setError] = useState<string | null>(null);
   const [lastUserOpHash, setLastUserOpHash] = useState<Hex | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const setStatusSafe = (value: string | null) => {
+    if (mountedRef.current) setStatus(value);
+  };
+  const setErrorSafe = (value: string | null) => {
+    if (mountedRef.current) setError(value);
+  };
+  const setLastUserOpHashSafe = (value: Hex | null) => {
+    if (mountedRef.current) setLastUserOpHash(value);
+  };
+  const setIsSubmittingSafe = (value: boolean) => {
+    if (mountedRef.current) setIsSubmitting(value);
+  };
 
   const hasBalance = balance !== null && balance > 0n;
 
@@ -66,18 +86,18 @@ export function TransferOutAction(props: {
             disabled={!bundlerUrl || isSubmitting}
             onClick={async () => {
               if (isSubmitting) return;
-              setIsSubmitting(true);
-              setError(null);
-              setStatus(null);
-              setLastUserOpHash(null);
+              setIsSubmittingSafe(true);
+              setErrorSafe(null);
+              setStatusSafe(null);
+              setLastUserOpHashSafe(null);
 
               try {
                 if (!balance || balance <= 0n) throw new Error("No balance to transfer.");
 
-                setStatus("Switching network (if needed)...");
+                setStatusSafe("Switching network (if needed)...");
                 await switchChain(chainId);
 
-                setStatus("Building transfer call...");
+                setStatusSafe("Building transfer call...");
                 const transferCallData = encodeErc20Transfer(owner, balance);
 
                 const kernelCallData = await encodeKernelExecuteCalls([
@@ -97,16 +117,16 @@ export function TransferOutAction(props: {
                   chainId,
                   kernelCallData,
                   request,
-                  onStatus: setStatus,
+                  onStatus: setStatusSafe,
                 });
 
-                setLastUserOpHash(sentHash);
-                setStatus("Transfer submitted.");
+                setLastUserOpHashSafe(sentHash);
+                setStatusSafe("Transfer submitted.");
               } catch (e) {
-                setError(e instanceof Error ? e.message : "Transfer failed.");
-                setStatus(null);
+                setErrorSafe(e instanceof Error ? e.message : "Transfer failed.");
+                setStatusSafe(null);
               } finally {
-                setIsSubmitting(false);
+                setIsSubmittingSafe(false);
               }
             }}
           >

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
 import type { SupportedChainId } from "@/lib/chains";
@@ -47,6 +47,26 @@ export function AaveRescueActions(props: {
   const [error, setError] = useState<string | null>(null);
   const [lastUserOpHash, setLastUserOpHash] = useState<Hex | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const setStatusSafe = (value: string | null) => {
+    if (mountedRef.current) setStatus(value);
+  };
+  const setErrorSafe = (value: string | null) => {
+    if (mountedRef.current) setError(value);
+  };
+  const setLastUserOpHashSafe = (value: Hex | null) => {
+    if (mountedRef.current) setLastUserOpHash(value);
+  };
+  const setIsSubmittingSafe = (value: boolean) => {
+    if (mountedRef.current) setIsSubmitting(value);
+  };
 
   const selectedAsset = action === "withdraw" ? collateralAsset : repayAsset;
   const maxLabel = action === "withdraw" ? "Withdraw all" : "Repay all";
@@ -65,15 +85,15 @@ export function AaveRescueActions(props: {
 
   const executeAction = async () => {
     if (isSubmitting) return;
-    setIsSubmitting(true);
-    setError(null);
-    setStatus(null);
-    setLastUserOpHash(null);
+    setIsSubmittingSafe(true);
+    setErrorSafe(null);
+    setStatusSafe(null);
+    setLastUserOpHashSafe(null);
 
     try {
       if (amountForProtocol === null) throw new Error("Invalid amount.");
 
-      setStatus("Switching network (if needed)…");
+      setStatusSafe("Switching network (if needed)…");
       await switchChain(chainId);
 
       const chain = getChainConfig(chainId);
@@ -87,7 +107,7 @@ export function AaveRescueActions(props: {
 
       if (action === "repay") {
         // Step 1: Approve USDC to Aave Pool (separate UserOp).
-        setStatus("Step 1/2: Approving repay token to Aave Pool…");
+        setStatusSafe("Step 1/2: Approving repay token to Aave Pool…");
         const approveCallData = encodeErc20Approve(poolAddress, MAX_UINT256);
 
         const approveKernelCallData = await encodeKernelExecuteCalls([
@@ -102,15 +122,15 @@ export function AaveRescueActions(props: {
           chainId,
           kernelCallData: approveKernelCallData,
           request,
-          onStatus: (s) => setStatus(`Step 1/2: ${s}`),
+          onStatus: (s) => setStatusSafe(`Step 1/2: ${s}`),
         });
-        setStatus("Step 1/2: Approve submitted. Waiting for confirmation…");
+        setStatusSafe("Step 1/2: Approve submitted. Waiting for confirmation…");
 
         // Wait for approve to be mined — poll the bundler for receipt
         await waitForUserOp(bundlerUrl, approveHash);
 
         // Step 2: Repay debt
-        setStatus("Step 2/2: Repaying debt to Aave Pool…");
+        setStatusSafe("Step 2/2: Repaying debt to Aave Pool…");
         const repayCallData = encodeAaveRepay({
           asset: repayAsset.address,
           amount: rawAmount,
@@ -130,14 +150,14 @@ export function AaveRescueActions(props: {
           chainId,
           kernelCallData: repayKernelCallData,
           request,
-          onStatus: (s) => setStatus(`Step 2/2: ${s}`),
+          onStatus: (s) => setStatusSafe(`Step 2/2: ${s}`),
         });
 
-        setLastUserOpHash(repayHash);
-        setStatus("Repay submitted.");
+        setLastUserOpHashSafe(repayHash);
+        setStatusSafe("Repay submitted.");
       } else {
         // Withdraw: single UserOp
-        setStatus("Withdrawing collateral from Aave Pool…");
+        setStatusSafe("Withdrawing collateral from Aave Pool…");
         const withdrawCallData = encodeAaveWithdraw({
           asset: collateralAsset.address,
           amount: rawAmount,
@@ -156,11 +176,11 @@ export function AaveRescueActions(props: {
           chainId,
           kernelCallData: withdrawKernelCallData,
           request,
-          onStatus: setStatus,
+          onStatus: setStatusSafe,
         });
 
-        setLastUserOpHash(withdrawHash);
-        setStatus("Withdraw submitted.");
+        setLastUserOpHashSafe(withdrawHash);
+        setStatusSafe("Withdraw submitted.");
       }
     } catch (e: unknown) {
       let msg = "Rescue action failed.";
@@ -171,10 +191,10 @@ export function AaveRescueActions(props: {
           : null;
         msg = detail ? `${e.message} — ${detail}` : e.message;
       }
-      setError(msg);
-      setStatus(null);
+      setErrorSafe(msg);
+      setStatusSafe(null);
     } finally {
-      setIsSubmitting(false);
+      setIsSubmittingSafe(false);
     }
   };
 

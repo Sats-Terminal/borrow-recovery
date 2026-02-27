@@ -81,6 +81,8 @@ export default function WalletDetailPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshRequestIdRef = useRef(0);
   const manualChainSelectionRef = useRef(false);
+  const selectedChainIdRef = useRef<SupportedChainId>(selectedChainId);
+  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const chain = useMemo(() => getChainConfig(selectedChainId), [selectedChainId]);
 
@@ -144,13 +146,31 @@ export default function WalletDetailPage() {
     manualChainSelectionRef.current = false;
   }, [kernelAddress]);
 
+  useEffect(() => {
+    selectedChainIdRef.current = selectedChainId;
+  }, [selectedChainId]);
+
+  useEffect(() => {
+    return () => {
+      if (copyResetTimeoutRef.current !== null) {
+        clearTimeout(copyResetTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const copyAddress = useCallback(() => {
     if (!kernelAddress) return;
     navigator.clipboard
       .writeText(kernelAddress)
       .then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (copyResetTimeoutRef.current !== null) {
+          clearTimeout(copyResetTimeoutRef.current);
+        }
+        copyResetTimeoutRef.current = setTimeout(() => {
+          setCopied(false);
+          copyResetTimeoutRef.current = null;
+        }, 2000);
       })
       .catch(() => {
         setError("Could not copy address. Please copy it manually.");
@@ -177,24 +197,29 @@ export default function WalletDetailPage() {
       setError("Invalid index.");
       return;
     }
-    if (!chain) {
+    const requestId = ++refreshRequestIdRef.current;
+    const refreshChainId = selectedChainId;
+    const refreshChain = getChainConfig(refreshChainId);
+    if (!refreshChain) {
       setError("Unsupported chain.");
       return;
     }
-
-    const requestId = ++refreshRequestIdRef.current;
-    const isStale = () => refreshRequestIdRef.current !== requestId;
+    const isRequestStale = () => refreshRequestIdRef.current !== requestId;
+    const isStale = () => isRequestStale() || selectedChainIdRef.current !== refreshChainId;
     setIsRefreshing(true);
-
-    const chainIdHex = (await request("eth_chainId")) as string;
-    const current = typeof chainIdHex === "string" && chainIdHex.startsWith("0x") ? Number.parseInt(chainIdHex.slice(2), 16) : null;
-    if (current !== selectedChainId) {
-      setError(`Switch your wallet to ${chain.name} (chainId ${selectedChainId}) to read positions.`);
-      return;
-    }
-
-    setStatus("Reading onchain data…");
     try {
+      const chainIdHex = (await request("eth_chainId")) as string;
+      const current = typeof chainIdHex === "string" && chainIdHex.startsWith("0x") ? Number.parseInt(chainIdHex.slice(2), 16) : null;
+      if (current !== refreshChainId) {
+        if (!isStale()) {
+          setError(`Switch your wallet to ${refreshChain.name} (chainId ${refreshChainId}) to read positions.`);
+        }
+        return;
+      }
+
+      if (isStale()) return;
+      setStatus("Reading onchain data…");
+
       const nativeBalHex = (await request("eth_getBalance", [kernelAddress, "latest"])) as string;
       if (isStale()) return;
       setNativeBalance(BigInt(nativeBalHex));
@@ -208,10 +233,10 @@ export default function WalletDetailPage() {
       setUsdcBalance(decodeErc20BalanceOf(usdcBalRes));
       setBtcBalance(decodeErc20BalanceOf(btcBalRes));
 
-      if (chain.aaveV3PoolAddress) {
+      if (refreshChain.aaveV3PoolAddress) {
         try {
           const summary = await fetchAaveUserSummaryWithBackendLogic({
-            chain,
+            chain: refreshChain,
             walletAddress: kernelAddress,
           });
           if (isStale()) return;
@@ -220,15 +245,15 @@ export default function WalletDetailPage() {
           setAaveSummary(null);
         }
 
-        const aaveRes = (await request("eth_call", [{ to: chain.aaveV3PoolAddress, data: encodeAaveGetUserAccountData(kernelAddress) }, "latest"])) as Hex;
+        const aaveRes = (await request("eth_call", [{ to: refreshChain.aaveV3PoolAddress, data: encodeAaveGetUserAccountData(kernelAddress) }, "latest"])) as Hex;
         if (isStale()) return;
         setAaveAccountData(decodeAaveGetUserAccountData(aaveRes));
       }
 
-      if (selectedChainId === 8453 && chain.morphoBlueAddress) {
+      if (refreshChainId === 8453 && refreshChain.morphoBlueAddress) {
         try {
           const summary = await fetchMorphoSummaryWithBackendLogic({
-            rpcUrl: chain.rpcUrl,
+            rpcUrl: refreshChain.rpcUrl,
             market: MORPHO_BASE_CBBTC_USDC_MARKET,
             userAddress: kernelAddress,
           });
@@ -238,7 +263,7 @@ export default function WalletDetailPage() {
           setMorphoSummary(null);
         }
 
-        const morphoRes = (await request("eth_call", [{ to: chain.morphoBlueAddress, data: encodeMorphoBluePosition(MORPHO_BASE_MARKETS.cbBTC_USDC.marketId, kernelAddress) }, "latest"])) as Hex;
+        const morphoRes = (await request("eth_call", [{ to: refreshChain.morphoBlueAddress, data: encodeMorphoBluePosition(MORPHO_BASE_MARKETS.cbBTC_USDC.marketId, kernelAddress) }, "latest"])) as Hex;
         if (isStale()) return;
         setMorphoPosition(decodeMorphoBluePosition(morphoRes));
       }
@@ -249,7 +274,7 @@ export default function WalletDetailPage() {
       if (isStale()) return;
       setError(e instanceof Error ? e.message : "Failed to read positions.");
     } finally {
-      if (!isStale()) setIsRefreshing(false);
+      if (!isRequestStale()) setIsRefreshing(false);
     }
   };
 
@@ -337,6 +362,7 @@ export default function WalletDetailPage() {
                 <select
                   className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
                   value={selectedChainId}
+                  disabled={isRefreshing}
                   onChange={async (e) => {
                     const newChainId = Number(e.target.value) as SupportedChainId;
                     setError(null);

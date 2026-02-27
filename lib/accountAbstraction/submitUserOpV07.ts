@@ -103,10 +103,12 @@ async function getBundlerUserOpGasPrice(bundlerUrl: string): Promise<UserOpGasPr
 
 function extractMinRequiredMaxFeePerGas(error: unknown): bigint | null {
   if (!(error instanceof Error)) return null;
-  const match = error.message.match(/maxFeePerGas must be at least (\d+)/i);
+  const match = error.message.match(
+    /maxFeePerGas must be at least\s+(0x[0-9a-fA-F]+|\d+)/i,
+  ) ?? error.message.match(/at least\s+(0x[0-9a-fA-F]+|\d+)\s+\(current maxFeePerGas/i);
   if (!match) return null;
   try {
-    return BigInt(match[1]);
+    return parseGasPriceQuantity(match[1], "minRequiredMaxFeePerGas");
   } catch {
     return null;
   }
@@ -292,109 +294,135 @@ export async function submitKernelUserOperationV07(parameters: {
   });
 
   let opBase = buildOpBase(nonce);
-  let opBaseRpc = toRpcOp(opBase);
+  const estimateWithNonceRetry = async (
+    baseOp: UserOperationV07,
+  ): Promise<{ baseOp: UserOperationV07; estimate: EstimateGasResult }> => {
+    try {
+      const estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
+        toRpcOp(baseOp),
+        ENTRYPOINT_V07_ADDRESS,
+      ]);
+      return { baseOp, estimate };
+    } catch (error) {
+      if (!isInvalidAccountNonceError(error)) throw error;
+
+      onStatus?.("Refreshing nonce and retrying estimate…");
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      nonce = await readKernelNonce({
+        chainRpcUrl,
+        request,
+        kernelAddress,
+        nonceKey: kernelNonceKey,
+      });
+      const retriedBaseOp = buildOpBase(nonce);
+      const estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
+        toRpcOp(retriedBaseOp),
+        ENTRYPOINT_V07_ADDRESS,
+      ]);
+      return { baseOp: retriedBaseOp, estimate };
+    }
+  };
 
   onStatus?.("Estimating UserOperation gas…");
-  let estimate: EstimateGasResult;
-  try {
-    estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
-      opBaseRpc,
-      ENTRYPOINT_V07_ADDRESS,
-    ]);
-  } catch (error) {
-    if (!isInvalidAccountNonceError(error)) throw error;
-
-    onStatus?.("Refreshing nonce and retrying estimate…");
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    nonce = await readKernelNonce({
-      chainRpcUrl,
-      request,
-      kernelAddress,
-      nonceKey: kernelNonceKey,
-    });
-    opBase = buildOpBase(nonce);
-    opBaseRpc = toRpcOp(opBase);
-    estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
-      opBaseRpc,
-      ENTRYPOINT_V07_ADDRESS,
-    ]);
-  }
+  const initialEstimate = await estimateWithNonceRetry(opBase);
+  opBase = initialEstimate.baseOp;
 
   // Add 50% buffer to gas limits — bundler estimates can be tight, and state
   // may change between estimation and submission (interest accrual, gas price shifts).
   const addBuffer = (value: bigint): bigint => (value * 150n) / 100n;
 
-  const rawCallGas = parseHexQuantity(estimate.callGasLimit, "callGasLimit");
-  const rawVerificationGas = parseHexQuantity(estimate.verificationGasLimit, "verificationGasLimit");
-  const rawPreVerificationGas = parseHexQuantity(estimate.preVerificationGas, "preVerificationGas");
+  const withBufferedGasLimits = (baseOp: UserOperationV07, estimate: EstimateGasResult): UserOperationV07 => {
+    const rawCallGas = parseHexQuantity(estimate.callGasLimit, "callGasLimit");
+    const rawVerificationGas = parseHexQuantity(estimate.verificationGasLimit, "verificationGasLimit");
+    const rawPreVerificationGas = parseHexQuantity(estimate.preVerificationGas, "preVerificationGas");
 
-  onStatus?.(`Gas estimates: call=${rawCallGas} verification=${rawVerificationGas} preVerification=${rawPreVerificationGas}`);
+    onStatus?.(
+      `Gas estimates: call=${rawCallGas} verification=${rawVerificationGas} preVerification=${rawPreVerificationGas}`,
+    );
 
-  const bufferedCallGas = addBuffer(rawCallGas);
-  const bufferedVerificationGas = addBuffer(rawVerificationGas);
-  const bufferedPreVerificationGas = addBuffer(rawPreVerificationGas);
+    const bufferedCallGas = addBuffer(rawCallGas);
+    const bufferedVerificationGas = addBuffer(rawVerificationGas);
+    const bufferedPreVerificationGas = addBuffer(rawPreVerificationGas);
 
-  const callGasLimit = bufferedCallGas > 0n ? bufferedCallGas : FALLBACK_CALL_GAS_LIMIT;
-  const verificationGasLimit = bufferedVerificationGas > 0n
-    ? bufferedVerificationGas
-    : FALLBACK_VERIFICATION_GAS_LIMIT;
-  const preVerificationGas = bufferedPreVerificationGas > 0n
-    ? bufferedPreVerificationGas
-    : FALLBACK_PRE_VERIFICATION_GAS;
+    const callGasLimit = bufferedCallGas > 0n ? bufferedCallGas : FALLBACK_CALL_GAS_LIMIT;
+    const verificationGasLimit = bufferedVerificationGas > 0n
+      ? bufferedVerificationGas
+      : FALLBACK_VERIFICATION_GAS_LIMIT;
+    const preVerificationGas = bufferedPreVerificationGas > 0n
+      ? bufferedPreVerificationGas
+      : FALLBACK_PRE_VERIFICATION_GAS;
 
-  const opFinal: UserOperationV07 = {
-    ...opBase,
-    callGasLimit,
-    verificationGasLimit,
-    preVerificationGas,
+    return {
+      ...baseOp,
+      callGasLimit,
+      verificationGasLimit,
+      preVerificationGas,
+    };
   };
 
-  const userOpHash = getUserOperationHashV07({
-    userOperation: { ...opFinal, signature: "0x" },
-    entryPointAddress: ENTRYPOINT_V07_ADDRESS,
-    chainId,
-  });
-
-  onStatus?.("Signing UserOperation hash…");
-  const signature = await signUserOperationHash({ request, owner, userOpHash });
-
-  const opFinalRpc = {
-    sender: opFinal.sender,
-    nonce: toHexQuantity(opFinal.nonce),
-    callData: opFinal.callData,
-    callGasLimit: toHexQuantity(opFinal.callGasLimit),
-    verificationGasLimit: toHexQuantity(opFinal.verificationGasLimit),
-    preVerificationGas: toHexQuantity(opFinal.preVerificationGas),
-    maxFeePerGas: toHexQuantity(opFinal.maxFeePerGas),
-    maxPriorityFeePerGas: toHexQuantity(opFinal.maxPriorityFeePerGas),
-    signature,
+  const toSignedRpcOp = async (op: UserOperationV07) => {
+    const userOpHash = getUserOperationHashV07({
+      userOperation: { ...op, signature: "0x" },
+      entryPointAddress: ENTRYPOINT_V07_ADDRESS,
+      chainId,
+    });
+    onStatus?.("Signing UserOperation hash…");
+    const signature = await signUserOperationHash({ request, owner, userOpHash });
+    return {
+      ...toRpcOp(op),
+      signature,
+    };
   };
 
-  onStatus?.("Sending UserOperation…");
-  try {
-    return await jsonRpcFetch<Hex>(bundlerUrl, "eth_sendUserOperation", [
-      opFinalRpc,
-      ENTRYPOINT_V07_ADDRESS,
-    ]);
-  } catch (sendError) {
-    const minRequiredMaxFeePerGas = extractMinRequiredMaxFeePerGas(sendError);
-    if (minRequiredMaxFeePerGas !== null) {
-      const bumpedMaxFeePerGas = (minRequiredMaxFeePerGas * 110n) / 100n;
-      const bumpedMaxPriorityFeePerGas = opFinal.maxPriorityFeePerGas > bumpedMaxFeePerGas
-        ? bumpedMaxFeePerGas
-        : opFinal.maxPriorityFeePerGas;
-      const retryRpc = {
-        ...opFinalRpc,
-        maxFeePerGas: toHexQuantity(bumpedMaxFeePerGas),
-        maxPriorityFeePerGas: toHexQuantity(bumpedMaxPriorityFeePerGas),
-      };
-      onStatus?.("Retrying with higher gas price…");
+  let opForSend = withBufferedGasLimits(opBase, initialEstimate.estimate);
+  let nonceRetryUsed = false;
+  let gasRetryUsed = false;
+
+  while (true) {
+    const opFinalRpc = await toSignedRpcOp(opForSend);
+
+    onStatus?.("Sending UserOperation…");
+    try {
       return await jsonRpcFetch<Hex>(bundlerUrl, "eth_sendUserOperation", [
-        retryRpc,
+        opFinalRpc,
         ENTRYPOINT_V07_ADDRESS,
       ]);
-    }
+    } catch (sendError) {
+      const minRequiredMaxFeePerGas = extractMinRequiredMaxFeePerGas(sendError);
+      if (minRequiredMaxFeePerGas !== null && !gasRetryUsed) {
+        const minBumpedFee = (minRequiredMaxFeePerGas * 110n) / 100n;
+        const currentBumpedFee = (opForSend.maxFeePerGas * 110n) / 100n;
+        const bumpedMaxFeePerGas = minBumpedFee > currentBumpedFee ? minBumpedFee : currentBumpedFee;
+        const bumpedMaxPriorityFeePerGas = opForSend.maxPriorityFeePerGas > bumpedMaxFeePerGas
+          ? bumpedMaxFeePerGas
+          : opForSend.maxPriorityFeePerGas;
+        opForSend = {
+          ...opForSend,
+          maxFeePerGas: bumpedMaxFeePerGas,
+          maxPriorityFeePerGas: bumpedMaxPriorityFeePerGas,
+        };
+        gasRetryUsed = true;
+        onStatus?.("Retrying with higher gas price…");
+        continue;
+      }
 
-    throw sendError;
+      if (isInvalidAccountNonceError(sendError) && !nonceRetryUsed) {
+        nonceRetryUsed = true;
+        onStatus?.("Nonce changed before submission. Refreshing and retrying…");
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        nonce = await readKernelNonce({
+          chainRpcUrl,
+          request,
+          kernelAddress,
+          nonceKey: kernelNonceKey,
+        });
+        const refreshedEstimate = await estimateWithNonceRetry(buildOpBase(nonce));
+        opBase = refreshedEstimate.baseOp;
+        opForSend = withBufferedGasLimits(opBase, refreshedEstimate.estimate);
+        continue;
+      }
+
+      throw sendError;
+    }
   }
 }

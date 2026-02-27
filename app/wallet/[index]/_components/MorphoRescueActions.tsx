@@ -1,7 +1,7 @@
 "use client";
 
 import { providers } from "ethers";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
 import { getChainConfig, type SupportedChainId } from "@/lib/chains";
@@ -52,6 +52,26 @@ export function MorphoRescueActions(props: {
   const [error, setError] = useState<string | null>(null);
   const [lastUserOpHash, setLastUserOpHash] = useState<Hex | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const setStatusSafe = (value: string | null) => {
+    if (mountedRef.current) setStatus(value);
+  };
+  const setErrorSafe = (value: string | null) => {
+    if (mountedRef.current) setError(value);
+  };
+  const setLastUserOpHashSafe = (value: Hex | null) => {
+    if (mountedRef.current) setLastUserOpHash(value);
+  };
+  const setIsSubmittingSafe = (value: boolean) => {
+    if (mountedRef.current) setIsSubmitting(value);
+  };
 
   const selectedDecimals = action === "withdraw" ? collateralAsset.decimals : loanAsset.decimals;
   const amountLabel =
@@ -122,18 +142,18 @@ export function MorphoRescueActions(props: {
           disabled={!bundlerUrl || amountForProtocol === null || isSubmitting}
           onClick={async () => {
             if (isSubmitting) return;
-            setIsSubmitting(true);
-            setError(null);
-            setStatus(null);
-            setLastUserOpHash(null);
+            setIsSubmittingSafe(true);
+            setErrorSafe(null);
+            setStatusSafe(null);
+            setLastUserOpHashSafe(null);
 
             try {
               if (amountForProtocol === null) throw new Error("Invalid amount.");
 
-              setStatus("Switching network (if needed)…");
+              setStatusSafe("Switching network (if needed)…");
               await switchChain(chainId);
 
-              setStatus("Building Morpho calls…");
+              setStatusSafe("Building Morpho calls…");
               const connectedProvider = await getProvider();
               const ethersProvider = new providers.Web3Provider(
                 connectedProvider as providers.ExternalProvider,
@@ -170,16 +190,16 @@ export function MorphoRescueActions(props: {
                 chainId,
                 kernelCallData,
                 request,
-                onStatus: setStatus,
+                onStatus: setStatusSafe,
               });
 
-              setLastUserOpHash(sentHash);
-              setStatus("Submitted.");
+              setLastUserOpHashSafe(sentHash);
+              setStatusSafe("Submitted.");
             } catch (e) {
-              setError(e instanceof Error ? e.message : "Rescue action failed.");
-              setStatus(null);
+              setErrorSafe(e instanceof Error ? e.message : "Rescue action failed.");
+              setStatusSafe(null);
             } finally {
-              setIsSubmitting(false);
+              setIsSubmittingSafe(false);
             }
           }}
         >

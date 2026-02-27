@@ -167,18 +167,22 @@ export default function ScanPage() {
                       setRows(baseRows);
 
                       for (const targetChainId of selectedChains) {
-                        if (cancelRef.current) break;
+                        if (cancelRef.current || !mountedRef.current) break;
 
+                        if (!mountedRef.current) return;
                         setStatus(`Switch to ${targetChainId} to scan…`);
                         const current = await readChainId();
+                        if (cancelRef.current || !mountedRef.current) break;
                         if (current !== targetChainId) {
                           await switchChain(targetChainId);
+                          if (cancelRef.current || !mountedRef.current) break;
                         }
 
+                        if (!mountedRef.current) return;
                         setStatus(`Scanning chain ${targetChainId}…`);
                         const batchSize = 12;
                         for (let offset = 0; offset < baseRows.length; offset += batchSize) {
-                          if (cancelRef.current) break;
+                          if (cancelRef.current || !mountedRef.current) break;
 
                           const batch = baseRows.slice(offset, offset + batchSize);
                           const codes = (await Promise.all(
@@ -193,6 +197,7 @@ export default function ScanPage() {
                               }
                             }),
                           )) as string[];
+                          if (cancelRef.current || !mountedRef.current) break;
 
                           for (let i = 0; i < batch.length; i++) {
                             const row = batch[i];
@@ -200,7 +205,9 @@ export default function ScanPage() {
                           }
 
                           // Re-render occasionally, not for every single RPC call
+                          if (!mountedRef.current) return;
                           setRows([...baseRows]);
+                          if (!mountedRef.current) return;
                           setStatus(
                             `Scanning chain ${targetChainId}: ${Math.min(
                               offset + batch.length,
