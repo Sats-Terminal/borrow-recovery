@@ -7,7 +7,7 @@ import { Header } from "./_components/Header";
 export const metadata: Metadata = {
   title: "satsterminal Recovery UI",
   description:
-    "Self-serve recovery UI to discover and manage ZeroDev Kernel loan wallets if satsterminal ceases to exist.",
+    "Self-serve recovery UI for EVM ZeroDev Kernel loan wallets if satsterminal ceases to exist or the hosted service is unavailable. Solana loans are not supported.",
 };
 
 export default function RootLayout({

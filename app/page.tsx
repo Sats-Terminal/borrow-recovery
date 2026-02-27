@@ -24,8 +24,8 @@ export default function Home() {
           Recovery
         </h1>
         <p className="mt-2 max-w-2xl text-pretty text-base leading-7 text-zinc-600 dark:text-zinc-400">
-          Self-serve recovery UI to discover and manage your per-loan ZeroDev
-          Kernel smart accounts if satsterminal ceases to exist.
+          Self-serve recovery UI to discover and manage your per-loan EVM
+          ZeroDev Kernel smart accounts if satsterminal ceases to exist or the hosted service is unavailable. No Solana loans.
         </p>
       </section>
 
