@@ -40,6 +40,7 @@ export function TransferOutAction(props: {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastUserOpHash, setLastUserOpHash] = useState<Hex | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const hasBalance = balance !== null && balance > 0n;
 
@@ -62,8 +63,10 @@ export function TransferOutAction(props: {
           <button
             type="button"
             className="inline-flex h-9 items-center rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-400"
-            disabled={!bundlerUrl}
+            disabled={!bundlerUrl || isSubmitting}
             onClick={async () => {
+              if (isSubmitting) return;
+              setIsSubmitting(true);
               setError(null);
               setStatus(null);
               setLastUserOpHash(null);
@@ -102,10 +105,12 @@ export function TransferOutAction(props: {
               } catch (e) {
                 setError(e instanceof Error ? e.message : "Transfer failed.");
                 setStatus(null);
+              } finally {
+                setIsSubmitting(false);
               }
             }}
           >
-            Transfer all to connected wallet
+            {isSubmitting ? "Submitting…" : "Transfer all to connected wallet"}
           </button>
         ) : null}
       </div>
