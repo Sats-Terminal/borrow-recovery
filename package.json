@@ -1,0 +1,39 @@
+{
+  "name": "satsterminal-recovery",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build --webpack",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@aave/contract-helpers": "^1.37.1",
+    "@aave/math-utils": "^1.37.1",
+    "@bgd-labs/aave-address-book": "^4.44.22",
+    "@morpho-org/blue-sdk": "^5.16.0",
+    "@morpho-org/blue-sdk-viem": "^4.4.0",
+    "@rainbow-me/rainbowkit": "^2.2.10",
+    "@tanstack/react-query": "^5.90.21",
+    "@zerodev/ecdsa-validator": "^5.4.9",
+    "@zerodev/sdk": "^5.5.7",
+    "dayjs": "^1.11.19",
+    "ethers": "^5.8.0",
+    "next": "16.1.6",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "viem": "^2.46.3",
+    "wagmi": "^2.19.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.1.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
