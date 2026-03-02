@@ -76,6 +76,7 @@ export default function WalletDetailPage() {
   > | null>(null);
 
   const [copied, setCopied] = useState(false);
+  const [isCopying, setIsCopying] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [zerodevInput, setZerodevInput] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -159,7 +160,8 @@ export default function WalletDetailPage() {
   }, []);
 
   const copyAddress = useCallback(() => {
-    if (!kernelAddress) return;
+    if (!kernelAddress || isCopying) return;
+    setIsCopying(true);
     navigator.clipboard
       .writeText(kernelAddress)
       .then(() => {
@@ -174,8 +176,11 @@ export default function WalletDetailPage() {
       })
       .catch(() => {
         setError("Could not copy address. Please copy it manually.");
+      })
+      .finally(() => {
+        setIsCopying(false);
       });
-  }, [kernelAddress]);
+  }, [isCopying, kernelAddress]);
 
   const refresh = async () => {
     if (isRefreshing) return;
@@ -252,14 +257,18 @@ export default function WalletDetailPage() {
 
       if (refreshChainId === 8453 && refreshChain.morphoBlueAddress) {
         try {
+          const connectedProvider = await getProvider();
+          if (isStale()) return;
           const summary = await fetchMorphoSummaryWithBackendLogic({
             rpcUrl: refreshChain.rpcUrl,
+            provider: connectedProvider,
             market: MORPHO_BASE_CBBTC_USDC_MARKET,
             userAddress: kernelAddress,
           });
           if (isStale()) return;
           setMorphoSummary(summary);
-        } catch {
+        } catch (e) {
+          console.error("Morpho summary fetch failed", e);
           setMorphoSummary(null);
         }
 
@@ -325,10 +334,11 @@ export default function WalletDetailPage() {
                     <span className="font-mono text-sm font-medium text-amber-900 dark:text-amber-200 break-all">{kernelAddress}</span>
                     <button
                       type="button"
-                      className="shrink-0 rounded-md border border-amber-400 bg-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-300 dark:border-amber-600 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700"
+                      className="shrink-0 rounded-md border border-amber-400 bg-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-600 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700"
+                      disabled={isCopying}
                       onClick={copyAddress}
                     >
-                      {copied ? "Copied!" : "Copy address"}
+                      {copied ? "Copied!" : isCopying ? "Copying..." : "Copy address"}
                     </button>
                   </div>
                   <div className="mt-1.5">

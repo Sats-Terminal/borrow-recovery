@@ -215,6 +215,7 @@ export function AaveRescueActions(props: {
             <select
               className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
               value={action}
+              disabled={isSubmitting}
               onChange={(e) => {
                 setAction(e.target.value as ProtocolAction);
                 setUseMax(true);
@@ -226,7 +227,12 @@ export function AaveRescueActions(props: {
           </label>
 
           <label className="flex items-center gap-2">
-            <input type="checkbox" checked={useMax} onChange={() => setUseMax((v) => !v)} />
+            <input
+              type="checkbox"
+              checked={useMax}
+              disabled={isSubmitting}
+              onChange={() => setUseMax((v) => !v)}
+            />
             {maxLabel}
           </label>
 
@@ -236,6 +242,7 @@ export function AaveRescueActions(props: {
               <input
                 className="h-11 w-40 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
                 value={amountInput}
+                disabled={isSubmitting}
                 onChange={(e) => setAmountInput(e.target.value)}
                 placeholder="0.01"
               />

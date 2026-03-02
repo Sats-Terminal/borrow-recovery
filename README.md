@@ -10,77 +10,169 @@ This app is frontend-only:
 - No paymaster abstraction
 - All signatures happen in your connected wallet
 
-## What It Does
+## What This App Does
 
-- Scans deterministic Kernel wallet indices for your EOA across supported chains
-- Shows wallet balances and onchain loan health data
-- Executes rescue actions through ERC-4337 UserOperations (EntryPoint v0.7)
+- Derives deterministic ZeroDev Kernel v3.3 smart account addresses from your EOA + wallet index.
+- Scans index ranges across chains to find deployed loan wallets.
+- Reads balances + loan data from Aave and Morpho.
+- Submits rescue actions through ERC-4337 UserOperations (EntryPoint v0.7):
+  - Repay debt
+  - Withdraw collateral
+  - Transfer out collateral token balance
 
-## Supported
+## Current Protocol/Chain Support
 
-- Scope: EVM loans only (no Solana support)
 - Smart account: ZeroDev Kernel v3.3
 - Chains: Ethereum (`1`), Base (`8453`), Arbitrum (`42161`), BNB Chain (`56`)
-- Protocol reads:
-  - Aave v3 (all supported chains)
-  - Morpho Blue (Base, `cbBTC/USDC` market)
-- Rescue actions:
-  - Aave: repay / withdraw
-  - Morpho Blue (Base): repay / withdraw
-  - Transfer out collateral token balance to connected wallet
+- Aave V3:
+  - Reads + rescue actions on supported chains
+- Morpho Blue:
+  - Reads + rescue actions for Base `cbBTC/USDC` market
+  - Market ID: `0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836`
 
-## Safety Notes
+## Local Setup
 
-- Never paste or type private keys into this app.
-- Fund the loan wallet with native gas token before rescue actions.
-- Fund the loan wallet with required repay token before repay actions.
-- Validate addresses, chain, and amounts before signing.
+### 1. Prerequisites
 
-## Quick Start
+- Node.js `>=20`
+- npm
+- Browser wallet with EIP-1193 support (MetaMask, Rabby, etc.)
+- Optional WalletConnect Project ID (only needed if you want WalletConnect in UI)
 
-### Prerequisites
-
-- Node.js 20+
-- EIP-1193 wallet (MetaMask, Rabby, etc.)
-- Optional: WalletConnect Project ID (for WalletConnect support)
-
-### Install
+### 2. Install
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-If using WalletConnect, set:
+If you want WalletConnect support, set in `.env.local`:
 
 ```bash
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 ```
 
-### Run
+If you do not set this value, injected wallets still work.
+
+No API key is required for onchain position reads.
+You only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
+
+### 3. Run
 
 ```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open: `http://localhost:3000`
 
-## Usage
+### 4. Optional verification
 
-1. Connect your wallet.
-2. Go to `/scan` and scan index ranges to find deployed Kernel wallets.
-3. Open `/wallet/12` (replace `12` with your index) for a specific loan wallet.
-4. Click **Load positions** to fetch balances and protocol data.
-5. Enter a ZeroDev Project ID or bundler RPC URL in the wallet page.
-6. Run rescue actions (repay/withdraw/transfer out) after funding gas and repay assets as needed.
+```bash
+npm run lint
+npm run build
+```
 
-## Bundler Input
+## How To Use (Detailed)
 
-The wallet page accepts either:
-- ZeroDev project ID, or
-- Full URL like `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`
+### 1. Connect wallet
 
-The app derives the chain-specific bundler URL automatically.
+- Open the app.
+- Connect your EOA from the top-right wallet button.
+- Use the same EOA that originally created the loan Kernel wallets.
+
+### 2. Discover wallet index (`/scan`)
+
+- Go to `/scan`.
+- Set:
+  - `Start index`
+  - `End index`
+  - Chain checkboxes to scan
+- Click **Start scan**.
+- The app will request chain switches while scanning each chain.
+- Click any result row to open `/wallet/<index>`.
+
+Notes:
+- Max scan size per run is `2,000` indices.
+- Use **Show only deployed wallets** to filter noise.
+
+### 3. Open wallet details (`/wallet/<index>`)
+
+- The page derives and displays the Kernel loan wallet address.
+- Use **Copy address** and fund this smart wallet with:
+  - Native gas token (required for all rescue actions)
+  - Repay token (required for repay actions)
+- Select chain in the chain dropdown if needed.
+- Click **Load positions** to fetch:
+  - Wallet balances
+  - Aave loan details
+  - Morpho loan details (Base market above)
+
+### 4. Configure bundler input
+
+- In **ZeroDev Project ID or RPC URL**, paste either:
+  - A ZeroDev project ID, or
+  - A full bundler URL (example: `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`)
+- Rescue action buttons stay disabled until this input is valid.
+
+### 5. Run rescue actions
+
+#### Aave rescue actions
+
+- Choose action: **Withdraw collateral** or **Repay debt**
+- Choose full amount toggle or custom amount
+- Click **Execute Aave action via Kernel**
+
+Behavior:
+- Repay sends 2 UserOps:
+  1. Approve repay token to pool
+  2. Repay
+- Withdraw sends 1 UserOp.
+
+#### Morpho rescue actions
+
+- Choose action: **Withdraw collateral** or **Repay debt**
+- Choose full amount toggle or custom amount
+- Click **Execute Morpho action via Kernel**
+
+#### Transfer out collateral balance
+
+- In wallet balances section, click **Transfer all to connected wallet** for the collateral token card.
+
+### 6. Confirm results
+
+- Each action surfaces status text and a UserOp hash.
+- Verify token balances and debt/collateral changes by clicking **Load positions** again.
+
+## Operational Checklist
+
+Before executing actions:
+- Connected wallet is on the intended chain.
+- Loan wallet has enough native gas token.
+- Repay token is funded to the loan wallet for repay flows.
+- Bundler input is set correctly.
+- Amount + action are correct (especially full-withdraw/full-repay toggles).
+
+## Troubleshooting
+
+- `Switch your wallet to <chain>`:
+  - Use chain selector and approve wallet switch prompt.
+
+- Action button disabled:
+  - Missing/invalid bundler input, invalid amount, or an action is already submitting.
+
+- `No gas` warning:
+  - Send native gas token to the loan wallet address shown on the page.
+
+- Morpho USD fields show `—`:
+  - Click **Load positions** again.
+  - Check browser console for `Morpho summary fetch failed` to see exact read-path failure details.
+  - Current logic tries:
+    1. Public RPC read (backend-style)
+    2. Wallet provider read fallback
+    3. Raw onchain contract read fallback
+
+- Scan is slow:
+  - Reduce range size and/or number of selected chains.
 
 ## Project Layout
 
@@ -98,6 +190,12 @@ npm run build
 npm run start
 npm run lint
 ```
+
+## Safety Notes
+
+- Never paste or type private keys into this app.
+- Always validate addresses, chain, and amounts before signing.
+- You are fully responsible for transaction execution and operational safety.
 
 ## Disclaimer
 

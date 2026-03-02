@@ -1,15 +1,12 @@
-import { AccrualPosition, Market, ORACLE_PRICE_SCALE, type MarketId } from "@morpho-org/blue-sdk";
-import { blueAbi } from "@morpho-org/blue-sdk-viem";
+import { ORACLE_PRICE_SCALE, type MarketId } from "@morpho-org/blue-sdk";
+import { blueAbi, blueOracleAbi, fetchAccrualPosition } from "@morpho-org/blue-sdk-viem";
 import { BigNumber, Contract, ethers, providers } from "ethers";
-import { createPublicClient, http, type Address } from "viem";
+import { createPublicClient, custom, http, type Address } from "viem";
 import { base } from "viem/chains";
 import { erc20Abi as ERC20_ABI } from "viem";
 
 import { CHAIN_ASSETS } from "../assets";
 import type { Hex } from "../eth/types";
-
-import "@morpho-org/blue-sdk-viem/lib/augment/Market";
-import "@morpho-org/blue-sdk-viem/lib/augment/Position";
 
 export type MorphoParityMarketConfig = {
   label: string;
@@ -50,10 +47,202 @@ export type MorphoParitySummary = {
 const MORPHO_BLUE_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb" as Address;
 const MORPHO_BLUE_ABI = blueAbi as ethers.ContractInterface;
 
-function createBasePublicClient(rpcUrl: string): unknown {
+type Eip1193Provider = {
+  request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
+};
+
+type BasePublicClient = {
+  readContract: (parameters: {
+    address: Address;
+    abi: unknown;
+    functionName: string;
+    args?: readonly unknown[];
+  }) => Promise<unknown>;
+};
+
+function createBasePublicClient(parameters: {
+  rpcUrl?: string;
+  provider?: Eip1193Provider;
+}): BasePublicClient {
+  const { rpcUrl, provider } = parameters;
+  if (provider) {
+    return createPublicClient({
+      chain: base,
+      transport: custom(provider),
+    }) as unknown as BasePublicClient;
+  }
+  if (!rpcUrl) {
+    throw new Error("Morpho summary fetch requires either rpcUrl or wallet provider");
+  }
   return createPublicClient({
     chain: base,
     transport: http(rpcUrl),
+  }) as unknown as BasePublicClient;
+}
+
+function getBaseClientCandidates(parameters: {
+  rpcUrl?: string;
+  provider?: Eip1193Provider;
+}): Array<{ label: string; client: BasePublicClient }> {
+  const { rpcUrl, provider } = parameters;
+  const candidates: Array<{ label: string; client: BasePublicClient }> = [];
+
+  // Prefer public RPC first to mirror backend reads.
+  if (rpcUrl) {
+    candidates.push({
+      label: `rpc:${rpcUrl}`,
+      client: createBasePublicClient({ rpcUrl }),
+    });
+  }
+  if (provider) {
+    candidates.push({
+      label: "wallet-provider",
+      client: createBasePublicClient({ provider }),
+    });
+  }
+  if (candidates.length === 0) {
+    throw new Error("Morpho summary fetch requires either rpcUrl or wallet provider");
+  }
+  return candidates;
+}
+
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
+function mulDivUp(a: bigint, b: bigint, c: bigint): bigint {
+  if (c === 0n) return 0n;
+  if (a === 0n || b === 0n) return 0n;
+  return ((a * b) + c - 1n) / c;
+}
+
+function buildMorphoSummary(parameters: {
+  collateral: bigint;
+  borrowAssets: bigint;
+  price: bigint;
+  lltv: bigint;
+}): MorphoParitySummary {
+  const { collateral, borrowAssets, price, lltv } = parameters;
+  const collateralDecimals = CHAIN_ASSETS[8453].btcCollateral.decimals;
+  const loanDecimals = CHAIN_ASSETS[8453].usdc.decimals;
+
+  const collateralValueInLoanRaw = (collateral * price) / ORACLE_PRICE_SCALE;
+  const collateralUsd = Number(ethers.utils.formatUnits(collateralValueInLoanRaw, loanDecimals));
+  const borrowUsd = Number(ethers.utils.formatUnits(borrowAssets, loanDecimals));
+  const lltvAsDecimal = Number(ethers.utils.formatUnits(lltv, 18));
+
+  let healthFactor = "999";
+  let ltvRatio = "0";
+  let liquidationPrice = "0";
+
+  if (borrowUsd > 0 && collateralUsd > 0 && lltvAsDecimal > 0) {
+    const maxBorrowable = collateralUsd * lltvAsDecimal;
+    healthFactor = (maxBorrowable / borrowUsd).toString();
+    ltvRatio = (borrowUsd / collateralUsd).toString();
+
+    const collateralHuman = Number(ethers.utils.formatUnits(collateral, collateralDecimals));
+    if (collateralHuman > 0) {
+      liquidationPrice = ((borrowUsd / collateralHuman) / lltvAsDecimal).toString();
+    }
+  }
+
+  const availableBorrowsUsd = Math.max(0, collateralUsd * lltvAsDecimal - borrowUsd).toString();
+
+  return {
+    collateralUsd: collateralUsd.toString(),
+    borrowAssetsUsd: borrowUsd.toString(),
+    healthFactor,
+    ltv: ltvRatio,
+    availableBorrowsUsd,
+    liquidationPrice,
+  };
+}
+
+async function fetchMorphoSummaryViaAccrualPosition(parameters: {
+  client: BasePublicClient;
+  marketId: MarketId;
+  userAddress: Address;
+  lltv: bigint;
+}): Promise<MorphoParitySummary | null> {
+  const { client, marketId, userAddress, lltv } = parameters;
+  const position = await fetchAccrualPosition(
+    userAddress,
+    marketId,
+    client as never,
+    { chainId: base.id, deployless: false },
+  );
+
+  if (position.collateral === 0n && position.borrowShares === 0n) return null;
+
+  const price = position.market.price;
+  if (!price || price === 0n) {
+    throw new Error("Morpho oracle price unavailable");
+  }
+
+  return buildMorphoSummary({
+    collateral: position.collateral,
+    borrowAssets: position.borrowAssets,
+    price,
+    lltv,
+  });
+}
+
+async function fetchMorphoSummaryViaRawContractReads(parameters: {
+  client: BasePublicClient;
+  marketId: MarketId;
+  userAddress: Address;
+  lltv: bigint;
+}): Promise<MorphoParitySummary | null> {
+  const { client, marketId, userAddress, lltv } = parameters;
+
+  const [positionResult, marketResult, marketParamsResult] = await Promise.all([
+    client.readContract({
+      address: MORPHO_BLUE_ADDRESS,
+      abi: blueAbi,
+      functionName: "position",
+      args: [marketId, userAddress],
+    }),
+    client.readContract({
+      address: MORPHO_BLUE_ADDRESS,
+      abi: blueAbi,
+      functionName: "market",
+      args: [marketId],
+    }),
+    client.readContract({
+      address: MORPHO_BLUE_ADDRESS,
+      abi: blueAbi,
+      functionName: "idToMarketParams",
+      args: [marketId],
+    }),
+  ]);
+
+  const [, borrowShares, collateral] = positionResult as readonly [bigint, bigint, bigint];
+  if (collateral === 0n && borrowShares === 0n) return null;
+
+  const [, , totalBorrowAssets, totalBorrowShares] = marketResult as readonly [
+    bigint, bigint, bigint, bigint, bigint, bigint
+  ];
+  const [, , oracleAddress] = marketParamsResult as readonly [Address, Address, Address, Address, bigint];
+
+  const price = (await client.readContract({
+    address: oracleAddress,
+    abi: blueOracleAbi,
+    functionName: "price",
+  })) as bigint;
+
+  if (price === 0n) throw new Error("Morpho oracle price unavailable");
+
+  const borrowAssets = mulDivUp(borrowShares, totalBorrowAssets, totalBorrowShares);
+  return buildMorphoSummary({
+    collateral,
+    borrowAssets,
+    price,
+    lltv,
   });
 }
 
@@ -248,56 +437,50 @@ export async function buildMorphoWithdrawTxsWithBackendLogic(parameters: {
 }
 
 export async function fetchMorphoSummaryWithBackendLogic(parameters: {
-  rpcUrl: string;
+  rpcUrl?: string;
+  provider?: Eip1193Provider;
   market: MorphoParityMarketConfig;
   userAddress: Address;
 }): Promise<MorphoParitySummary | null> {
-  const { rpcUrl, market, userAddress } = parameters;
-  const publicClient = createBasePublicClient(rpcUrl);
+  const { rpcUrl, provider, market, userAddress } = parameters;
+  const clients = getBaseClientCandidates({ rpcUrl, provider });
   const marketId = market.marketId as MarketId;
+  const failures: string[] = [];
+  let sawEmptyPosition = false;
+  let successfulChecks = 0;
 
-  const [marketState, position] = await Promise.all([
-    Market.fetch(marketId, publicClient as never),
-    AccrualPosition.fetch(userAddress, marketId, publicClient as never),
-  ]);
-
-  if (position.collateral === 0n && position.borrowShares === 0n) return null;
-  if (!marketState.price || marketState.price === 0n) {
-    throw new Error("Morpho oracle price unavailable");
-  }
-
-  const collateralDecimals = CHAIN_ASSETS[8453].btcCollateral.decimals;
-  const loanDecimals = CHAIN_ASSETS[8453].usdc.decimals;
-
-  const collateralValueInLoanRaw =
-    (position.collateral * marketState.price) / ORACLE_PRICE_SCALE;
-  const collateralUsd = Number(ethers.utils.formatUnits(collateralValueInLoanRaw, loanDecimals));
-  const borrowUsd = Number(ethers.utils.formatUnits(position.borrowAssets, loanDecimals));
-  const lltv = Number(ethers.utils.formatUnits(market.lltv, 18));
-
-  let healthFactor = "999";
-  let ltv = "0";
-  let liquidationPrice = "0";
-
-  if (borrowUsd > 0 && collateralUsd > 0 && lltv > 0) {
-    const maxBorrowable = collateralUsd * lltv;
-    healthFactor = (maxBorrowable / borrowUsd).toString();
-    ltv = (borrowUsd / collateralUsd).toString();
-
-    const collateralHuman = Number(ethers.utils.formatUnits(position.collateral, collateralDecimals));
-    if (collateralHuman > 0) {
-      liquidationPrice = ((borrowUsd / collateralHuman) / lltv).toString();
+  for (const candidate of clients) {
+    try {
+      const summary = await fetchMorphoSummaryViaAccrualPosition({
+        client: candidate.client,
+        marketId,
+        userAddress,
+        lltv: market.lltv,
+      });
+      successfulChecks += 1;
+      if (summary) return summary;
+      sawEmptyPosition = true;
+    } catch (error) {
+      failures.push(`${candidate.label} accrual fetch failed: ${getErrorMessage(error)}`);
     }
   }
 
-  const availableBorrowsUsd = Math.max(0, collateralUsd * lltv - borrowUsd).toString();
+  for (const candidate of clients) {
+    try {
+      const summary = await fetchMorphoSummaryViaRawContractReads({
+        client: candidate.client,
+        marketId,
+        userAddress,
+        lltv: market.lltv,
+      });
+      successfulChecks += 1;
+      if (summary) return summary;
+      sawEmptyPosition = true;
+    } catch (error) {
+      failures.push(`${candidate.label} raw reads failed: ${getErrorMessage(error)}`);
+    }
+  }
 
-  return {
-    collateralUsd: collateralUsd.toString(),
-    borrowAssetsUsd: borrowUsd.toString(),
-    healthFactor,
-    ltv,
-    availableBorrowsUsd,
-    liquidationPrice,
-  };
+  if (successfulChecks > 0 && sawEmptyPosition) return null;
+  throw new Error(`Morpho summary unavailable: ${failures.join(" | ")}`);
 }
