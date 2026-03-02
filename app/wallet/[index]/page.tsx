@@ -42,7 +42,13 @@ function shortAddress(addr: Address) {
 }
 
 export default function WalletDetailPage() {
-  const { address: owner, getProvider, request, switchChain } = useWallet();
+  const {
+    address: owner,
+    chainId: connectedChainId,
+    getProvider,
+    request,
+    switchChain,
+  } = useWallet();
 
   const params = useParams();
   const indexParam = (params?.index as string | undefined) ?? "";
@@ -151,6 +157,28 @@ export default function WalletDetailPage() {
     selectedChainIdRef.current = selectedChainId;
   }, [selectedChainId]);
 
+  // Keep wallet network aligned with the selected chain dropdown.
+  useEffect(() => {
+    if (!owner) return;
+    if (connectedChainId === null) return;
+    if (connectedChainId === selectedChainId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await switchChain(selectedChainId);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to switch chain.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedChainId, owner, selectedChainId, switchChain]);
+
   useEffect(() => {
     return () => {
       if (copyResetTimeoutRef.current !== null) {
@@ -214,12 +242,34 @@ export default function WalletDetailPage() {
     setIsRefreshing(true);
     try {
       const chainIdHex = (await request("eth_chainId")) as string;
-      const current = typeof chainIdHex === "string" && chainIdHex.startsWith("0x") ? Number.parseInt(chainIdHex.slice(2), 16) : null;
+      let current = typeof chainIdHex === "string" && chainIdHex.startsWith("0x") ? Number.parseInt(chainIdHex.slice(2), 16) : null;
       if (current !== refreshChainId) {
-        if (!isStale()) {
-          setError(`Switch your wallet to ${refreshChain.name} (chainId ${refreshChainId}) to read positions.`);
+        if (isStale()) return;
+        setStatus(`Switching wallet to ${refreshChain.name}...`);
+        try {
+          await switchChain(refreshChainId);
+        } catch (switchError) {
+          if (!isStale()) {
+            setError(
+              switchError instanceof Error
+                ? switchError.message
+                : `Switch your wallet to ${refreshChain.name} (chainId ${refreshChainId}) to read positions.`,
+            );
+          }
+          return;
         }
-        return;
+
+        const refreshedChainIdHex = (await request("eth_chainId")) as string;
+        current =
+          typeof refreshedChainIdHex === "string" && refreshedChainIdHex.startsWith("0x")
+            ? Number.parseInt(refreshedChainIdHex.slice(2), 16)
+            : null;
+        if (current !== refreshChainId) {
+          if (!isStale()) {
+            setError(`Switch your wallet to ${refreshChain.name} (chainId ${refreshChainId}) to read positions.`);
+          }
+          return;
+        }
       }
 
       if (isStale()) return;
@@ -374,16 +424,11 @@ export default function WalletDetailPage() {
                   className="h-9 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
                   value={selectedChainId}
                   disabled={isRefreshing}
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const newChainId = Number(e.target.value) as SupportedChainId;
                     setError(null);
                     manualChainSelectionRef.current = true;
-                    try {
-                      await switchChain(newChainId);
-                      setSelectedChainId(newChainId);
-                    } catch (err) {
-                      setError(err instanceof Error ? err.message : "Failed to switch chain.");
-                    }
+                    setSelectedChainId(newChainId);
                   }}
                 >
                   {SUPPORTED_CHAINS.map((c) => (
@@ -431,7 +476,7 @@ export default function WalletDetailPage() {
                   href="https://dashboard.zerodev.app/projects/general"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-zinc-900 underline-offset-2 hover:underline"
+                  className="font-medium text-zinc-900 underline underline-offset-2"
                 >
                   dashboard.zerodev.app
                 </a>
