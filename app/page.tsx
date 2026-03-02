@@ -66,7 +66,7 @@ export default function Home() {
           <div>
             <h3 className="text-sm font-semibold">Loan details & repay</h3>
             <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-              Enter a wallet index to view Aave/Morpho positions, balances,
+              Enter the <b>wallet recovery id</b> to view Aave/Morpho positions, balances,
               health factor and execute repay or withdraw.
             </p>
           </div>
