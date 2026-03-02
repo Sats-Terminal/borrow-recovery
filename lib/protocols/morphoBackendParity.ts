@@ -36,6 +36,8 @@ export type MorphoParityPosition = {
 };
 
 export type MorphoParitySummary = {
+  collateralAmount: string;
+  borrowAmount: string;
   collateralUsd: string;
   borrowAssetsUsd: string;
   healthFactor: string;
@@ -131,6 +133,8 @@ function buildMorphoSummary(parameters: {
   const loanDecimals = CHAIN_ASSETS[chainId].usdc.decimals;
 
   const collateralValueInLoanRaw = (collateral * price) / ORACLE_PRICE_SCALE;
+  const collateralAmount = ethers.utils.formatUnits(collateral, collateralDecimals);
+  const borrowAmount = ethers.utils.formatUnits(borrowAssets, loanDecimals);
   const collateralUsd = Number(ethers.utils.formatUnits(collateralValueInLoanRaw, loanDecimals));
   const borrowUsd = Number(ethers.utils.formatUnits(borrowAssets, loanDecimals));
   const lltvAsDecimal = Number(ethers.utils.formatUnits(lltv, 18));
@@ -153,6 +157,8 @@ function buildMorphoSummary(parameters: {
   const availableBorrowsUsd = Math.max(0, collateralUsd * lltvAsDecimal - borrowUsd).toString();
 
   return {
+    collateralAmount,
+    borrowAmount,
     collateralUsd: collateralUsd.toString(),
     borrowAssetsUsd: borrowUsd.toString(),
     healthFactor,

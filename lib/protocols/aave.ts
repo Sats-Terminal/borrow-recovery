@@ -5,6 +5,7 @@ const aavePoolAbi = parseAbi([
   "function getUserAccountData(address user) view returns (uint256 totalCollateralBase, uint256 totalDebtBase, uint256 availableBorrowsBase, uint256 currentLiquidationThreshold, uint256 ltv, uint256 healthFactor)",
   "function repay(address asset, uint256 amount, uint256 interestRateMode, address onBehalfOf) returns (uint256)",
   "function withdraw(address asset, uint256 amount, address to) returns (uint256)",
+  "function getReserveTokensAddresses(address asset) view returns (address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress)",
 ]);
 
 export type AaveUserAccountData = {
@@ -22,6 +23,27 @@ export function encodeAaveGetUserAccountData(user: Address): Hex {
     functionName: "getUserAccountData",
     args: [user],
   });
+}
+
+export function encodeAaveGetReserveTokensAddresses(asset: Address): Hex {
+  return encodeFunctionData({
+    abi: aavePoolAbi,
+    functionName: "getReserveTokensAddresses",
+    args: [asset],
+  });
+}
+
+export function decodeAaveGetReserveTokensAddresses(result: Hex): {
+  aTokenAddress: Address;
+  stableDebtTokenAddress: Address;
+  variableDebtTokenAddress: Address;
+} {
+  const [aTokenAddress, stableDebtTokenAddress, variableDebtTokenAddress] = decodeFunctionResult({
+    abi: aavePoolAbi,
+    functionName: "getReserveTokensAddresses",
+    data: result,
+  });
+  return { aTokenAddress, stableDebtTokenAddress, variableDebtTokenAddress };
 }
 
 const MAX_UINT256 = 2n ** 256n - 1n;

@@ -9,7 +9,12 @@ import { getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/c
 import type { Address, Hex } from "@/lib/eth/types";
 import { deriveKernelAddressV3_3FromEOA } from "@/lib/kernel/deriveKernelAddress";
 import { fetchAaveUserSummaryWithBackendLogic } from "@/lib/protocols/aaveBackendParity";
-import { encodeAaveGetUserAccountData, decodeAaveGetUserAccountData } from "@/lib/protocols/aave";
+import {
+  decodeAaveGetReserveTokensAddresses,
+  decodeAaveGetUserAccountData,
+  encodeAaveGetReserveTokensAddresses,
+  encodeAaveGetUserAccountData,
+} from "@/lib/protocols/aave";
 import { decodeErc20BalanceOf, encodeErc20BalanceOf } from "@/lib/protocols/erc20";
 import {
   fetchMorphoSummaryWithBackendLogic,
@@ -40,6 +45,8 @@ function formatUnits(value: bigint, decimals: number): string {
 function shortAddress(addr: Address) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function WalletDetailPage() {
   const {
@@ -73,6 +80,8 @@ export default function WalletDetailPage() {
   const [aaveAccountData, setAaveAccountData] = useState<ReturnType<typeof decodeAaveGetUserAccountData> | null>(
     null,
   );
+  const [aaveCollateralSupplied, setAaveCollateralSupplied] = useState<bigint | null>(null);
+  const [aaveDebtAmount, setAaveDebtAmount] = useState<bigint | null>(null);
   const [aaveSummary, setAaveSummary] = useState<Awaited<
     ReturnType<typeof fetchAaveUserSummaryWithBackendLogic>
   > | null>(null);
@@ -215,6 +224,8 @@ export default function WalletDetailPage() {
     setError(null);
     setStatus(null);
     setAaveAccountData(null);
+    setAaveCollateralSupplied(null);
+    setAaveDebtAmount(null);
     setAaveSummary(null);
     setMorphoPosition(null);
     setMorphoSummary(null);
@@ -233,6 +244,7 @@ export default function WalletDetailPage() {
     const requestId = ++refreshRequestIdRef.current;
     const refreshChainId = selectedChainId;
     const refreshChain = getChainConfig(refreshChainId);
+    const refreshAssets = CHAIN_ASSETS[refreshChainId];
     if (!refreshChain) {
       setError("Unsupported chain.");
       return;
@@ -280,8 +292,8 @@ export default function WalletDetailPage() {
       setNativeBalance(BigInt(nativeBalHex));
 
       const [usdcBalRes, btcBalRes] = (await Promise.all([
-        request("eth_call", [{ to: assets.usdc.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
-        request("eth_call", [{ to: assets.btcCollateral.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
+        request("eth_call", [{ to: refreshAssets.usdc.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
+        request("eth_call", [{ to: refreshAssets.btcCollateral.address, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
       ])) as [Hex, Hex];
       if (isStale()) return;
 
@@ -303,6 +315,47 @@ export default function WalletDetailPage() {
         const aaveRes = (await request("eth_call", [{ to: refreshChain.aaveV3PoolAddress, data: encodeAaveGetUserAccountData(kernelAddress) }, "latest"])) as Hex;
         if (isStale()) return;
         setAaveAccountData(decodeAaveGetUserAccountData(aaveRes));
+
+        if (refreshChain.aaveV3ProtocolDataProviderAddress) {
+          try {
+            const [collateralReserveTokensRes, debtReserveTokensRes] = (await Promise.all([
+              request("eth_call", [{
+                to: refreshChain.aaveV3ProtocolDataProviderAddress,
+                data: encodeAaveGetReserveTokensAddresses(refreshAssets.btcCollateral.address),
+              }, "latest"]),
+              request("eth_call", [{
+                to: refreshChain.aaveV3ProtocolDataProviderAddress,
+                data: encodeAaveGetReserveTokensAddresses(refreshAssets.usdc.address),
+              }, "latest"]),
+            ])) as [Hex, Hex];
+            if (isStale()) return;
+
+            const collateralReserveTokens = decodeAaveGetReserveTokensAddresses(collateralReserveTokensRes);
+            const debtReserveTokens = decodeAaveGetReserveTokensAddresses(debtReserveTokensRes);
+
+            const [aTokenBalRes, variableDebtBalRes] = (await Promise.all([
+              request("eth_call", [{ to: collateralReserveTokens.aTokenAddress, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
+              request("eth_call", [{ to: debtReserveTokens.variableDebtTokenAddress, data: encodeErc20BalanceOf(kernelAddress) }, "latest"]),
+            ])) as [Hex, Hex];
+            if (isStale()) return;
+
+            let stableDebtBalance = 0n;
+            if (debtReserveTokens.stableDebtTokenAddress.toLowerCase() !== ZERO_ADDRESS) {
+              const stableDebtBalRes = (await request("eth_call", [{
+                to: debtReserveTokens.stableDebtTokenAddress,
+                data: encodeErc20BalanceOf(kernelAddress),
+              }, "latest"])) as Hex;
+              if (isStale()) return;
+              stableDebtBalance = decodeErc20BalanceOf(stableDebtBalRes);
+            }
+
+            setAaveCollateralSupplied(decodeErc20BalanceOf(aTokenBalRes));
+            setAaveDebtAmount(stableDebtBalance + decodeErc20BalanceOf(variableDebtBalRes));
+          } catch {
+            setAaveCollateralSupplied(null);
+            setAaveDebtAmount(null);
+          }
+        }
       }
 
       if (refreshChainId === 8453 && refreshChain.morphoBlueAddress) {
@@ -576,10 +629,13 @@ export default function WalletDetailPage() {
             ) : (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral (USD)</div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                    Collateral supplied ({assets.btcCollateral.symbol})
+                  </div>
                   <div className="mt-1 text-base font-semibold">
-                    {aaveSummary?.totalCollateralUSD ??
-                      (aaveAccountData ? formatUnits(aaveAccountData.totalCollateralBase, 8) : "—")}
+                    {aaveCollateralSupplied !== null
+                      ? formatUnits(aaveCollateralSupplied, assets.btcCollateral.decimals)
+                      : "—"}
                   </div>
                 </div>
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
@@ -587,14 +643,9 @@ export default function WalletDetailPage() {
                     Debt ({assets.usdc.symbol})
                   </div>
                   <div className="mt-1 text-base font-semibold text-red-600">
-                    {aaveSummary?.totalBorrowsUSD ??
-                      (aaveAccountData ? formatUnits(aaveAccountData.totalDebtBase, 8) : "—")}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Available borrows</div>
-                  <div className="mt-1 text-base font-semibold">
-                    {aaveSummary?.availableBorrowsUSD ?? "—"}
+                    {aaveDebtAmount !== null
+                      ? formatUnits(aaveDebtAmount, assets.usdc.decimals)
+                      : "—"}
                   </div>
                 </div>
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
@@ -666,26 +717,39 @@ export default function WalletDetailPage() {
                     <div className="mt-1 text-base font-semibold">{morphoPosition?.borrowShares.toString() ?? "—"}</div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral</div>
-                    <div className="mt-1 text-base font-semibold">
-                      {morphoPosition
-                        ? formatUnits(morphoPosition.collateral, CHAIN_ASSETS[8453].btcCollateral.decimals)
-                        : "—"}
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                      Collateral supplied ({assets.btcCollateral.symbol})
                     </div>
-                  </div>
-                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral (USD)</div>
-                    <div className="mt-1 text-base font-semibold">{morphoSummary?.collateralUsd ?? "—"}</div>
+                    <div className="mt-1 text-base font-semibold">
+                      {morphoSummary?.collateralAmount ??
+                        (morphoPosition
+                          ? formatUnits(morphoPosition.collateral, CHAIN_ASSETS[8453].btcCollateral.decimals)
+                          : "—")}
+                    </div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
                       Borrow ({assets.usdc.symbol})
                     </div>
-                    <div className="mt-1 text-base font-semibold text-red-600">{morphoSummary?.borrowAssetsUsd ?? "—"}</div>
+                    <div className="mt-1 text-base font-semibold text-red-600">
+                      {morphoSummary?.borrowAmount ?? "—"}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">LTV</div>
+                    <div className="mt-1 text-base font-semibold">
+                      {morphoSummary?.ltv ?? "—"}
+                    </div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Health factor</div>
                     <div className="mt-1 text-base font-semibold">{morphoSummary?.healthFactor ?? "—"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Liquidation price</div>
+                    <div className="mt-1 text-base font-semibold">
+                      {morphoSummary?.liquidationPrice ?? "—"}
+                    </div>
                   </div>
                 </div>
               )}

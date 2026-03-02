@@ -27,7 +27,7 @@ This app is frontend-only:
 - Aave V3:
   - Reads + rescue actions on supported chains
 - Morpho Blue:
-  - Reads + rescue actions for Base `cbBTC/USDC` market
+  - Reads + rescue actions
   - Market ID: `0x9103c3b4e834476c9a62ea009ba2c884ee42e94e6e314a26f04d312434191836`
 
 ## Local Setup
