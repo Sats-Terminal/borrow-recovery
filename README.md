@@ -137,6 +137,7 @@ You receive this wallet ID in the loan activation email sent to your email addre
 - Choose action: **Withdraw collateral** or **Repay debt**
 - Choose full amount toggle or custom amount
 - Click **Execute Aave action via Kernel**
+- If using **Repay all**, keep a little extra loan token (for example USDC/USDT) in the loan/kernel wallet, because interest accrues in real time and debt can increase slightly before execution.
 
 Behavior:
 - Repay sends 2 UserOps:
@@ -149,6 +150,7 @@ Behavior:
 - Choose action: **Withdraw collateral** or **Repay debt**
 - Choose full amount toggle or custom amount
 - Click **Execute Morpho action via Kernel**
+- If using **Repay all**, keep a little extra loan token (for example USDC/USDT) in the loan/kernel wallet, because interest accrues in real time and debt can increase slightly before execution.
 
 #### Transfer out collateral balance
 

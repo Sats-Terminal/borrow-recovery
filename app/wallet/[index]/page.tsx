@@ -554,7 +554,7 @@ export default function WalletDetailPage() {
           <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
             <div className="flex items-center justify-between">
               <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
-                Aave V3 — Loan details
+                Aave V3 — Loan details (debt asset: {assets.usdc.symbol})
               </h2>
               {aaveSummary?.healthFactor ? (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -583,7 +583,9 @@ export default function WalletDetailPage() {
                   </div>
                 </div>
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Debt (USD)</div>
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                    Debt (USD, {assets.usdc.symbol})
+                  </div>
                   <div className="mt-1 text-base font-semibold text-red-600">
                     {aaveSummary?.totalBorrowsUSD ??
                       (aaveAccountData ? formatUnits(aaveAccountData.totalDebtBase, 8) : "—")}
@@ -634,7 +636,7 @@ export default function WalletDetailPage() {
             <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
               <div className="flex items-center justify-between">
                 <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
-                  Morpho Blue — Loan details
+                  Morpho Blue — Loan details (debt asset: {assets.usdc.symbol})
                 </h2>
                 {morphoSummary?.healthFactor ? (
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -676,7 +678,9 @@ export default function WalletDetailPage() {
                     <div className="mt-1 text-base font-semibold">{morphoSummary?.collateralUsd ?? "—"}</div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
-                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Borrow (USD)</div>
+                    <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+                      Borrow (USD, {assets.usdc.symbol})
+                    </div>
                     <div className="mt-1 text-base font-semibold text-red-600">{morphoSummary?.borrowAssetsUsd ?? "—"}</div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">

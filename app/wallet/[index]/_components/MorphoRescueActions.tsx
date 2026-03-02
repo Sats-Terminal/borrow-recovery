@@ -214,6 +214,14 @@ export function MorphoRescueActions(props: {
           {isSubmitting ? "Submitting…" : "Execute Morpho action via Kernel"}
         </button>
 
+        {action === "repay" && useMax ? (
+          <p className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--muted)]">
+            Tip: keep a little extra {loanAsset.symbol} in the loan/kernel wallet when using
+            &nbsp;<strong>Repay all</strong>. Interest accrues in real time, so debt can increase
+            slightly before execution.
+          </p>
+        ) : null}
+
         {status ? <p className="text-sm text-[var(--muted)]">{status}</p> : null}
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         {lastUserOpHash ? (
