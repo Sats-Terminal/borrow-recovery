@@ -95,6 +95,12 @@ Notes:
 - Max scan size per run is `2,000` indices.
 - Use **Show only deployed wallets** to filter noise.
 
+You can skip scanning if you already know the wallet ID (index).
+Open `/wallet/<wallet-id>` directly to access that exact loan wallet.
+Example: `/wallet/12`
+
+You receive this wallet ID in the loan activation email sent to your email address when your loan is completed/activated.
+
 ### 3. Open wallet details (`/wallet/<index>`)
 
 - The page derives and displays the Kernel loan wallet address.
