@@ -584,7 +584,7 @@ export default function WalletDetailPage() {
                 </div>
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-                    Debt (USD, {assets.usdc.symbol})
+                    Debt ({assets.usdc.symbol})
                   </div>
                   <div className="mt-1 text-base font-semibold text-red-600">
                     {aaveSummary?.totalBorrowsUSD ??
@@ -679,7 +679,7 @@ export default function WalletDetailPage() {
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-                      Borrow (USD, {assets.usdc.symbol})
+                      Borrow ({assets.usdc.symbol})
                     </div>
                     <div className="mt-1 text-base font-semibold text-red-600">{morphoSummary?.borrowAssetsUsd ?? "—"}</div>
                   </div>
