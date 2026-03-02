@@ -76,9 +76,12 @@ npm run build
 
 ### 1. Connect wallet
 
+- You must export your private key from the Sats Terminal dashboard first.
+- Import that private key into MetaMask/Rabby (or another EIP-1193 wallet), then connect that imported wallet to this recovery UI.
 - Open the app.
-- Connect your EOA from the top-right wallet button.
-- Use the same EOA that originally created the loan Kernel wallets.
+- Connect that same imported EOA from the top-right wallet button.
+- Do not connect a different wallet, or the derived wallet IDs/Kernel addresses will not match your loan.
+- Never paste private keys into this recovery UI. Private keys should only be imported in your wallet application.
 
 ### 2. Discover wallet index (`/scan`)
 
