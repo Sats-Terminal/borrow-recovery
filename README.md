@@ -118,6 +118,13 @@ You receive this wallet ID in the loan activation email sent to your email addre
 
 ### 4. Configure bundler input
 
+- How to get your ZeroDev Project ID:
+  - Open https://dashboard.zerodev.app/projects/general and sign in.
+  - Open your project (or create one if none exists).
+  - Copy the **Project ID** shown in the top-right of the project page.
+
+![ZeroDev dashboard with Project ID at the top-right corner](public/zerodev.png)
+
 - In **ZeroDev Project ID or RPC URL**, paste either:
   - A ZeroDev project ID, or
   - A full bundler URL (example: `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`)

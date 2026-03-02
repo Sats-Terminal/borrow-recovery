@@ -480,7 +480,7 @@ export default function WalletDetailPage() {
                 >
                   dashboard.zerodev.app
                 </a>
-                {" "}&rarr; copy the <strong>Project ID</strong> (top right) or any <strong>RPC URL</strong> from the Active Networks list.
+                {" "}&rarr; sign in, open your project (or create one), then copy the <strong>Project ID</strong> from the top-right.
                 This is shared across all rescue actions below.
               </span>
             </label>
