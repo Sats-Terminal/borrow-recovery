@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -13,14 +14,18 @@ export function Header() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 border-b border-zinc-200 bg-zinc-50/80 backdrop-blur-lg dark:border-zinc-800 dark:bg-black/80">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-6">
+    <header className="sticky top-0 z-50 border-b border-[var(--line)] bg-[color:rgba(247,247,246,0.92)] backdrop-blur">
+      <div className="mx-auto flex h-20 w-full max-w-6xl items-center justify-between px-5 sm:px-7">
         <div className="flex items-center gap-8">
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-base font-bold tracking-tight">
-              satsterminal
-            </span>
-            <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+          <Link href="/" className="flex items-center gap-3">
+            <Image
+              src="/satsterminal-logo.svg"
+              alt="Sats Terminal"
+              width={184}
+              height={23}
+              priority
+            />
+            <span className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
               Recovery
             </span>
           </Link>
@@ -33,10 +38,10 @@ export function Header() {
                 <Link
                   key={href}
                   href={href}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
                     isActive
-                      ? "bg-zinc-200/70 text-zinc-900 dark:bg-zinc-800 dark:text-zinc-50"
-                      : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
+                      ? "border border-zinc-900 bg-zinc-900 text-white"
+                      : "text-[var(--muted)] hover:bg-[var(--panel-subtle)] hover:text-zinc-900"
                   }`}
                 >
                   {label}

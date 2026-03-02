@@ -289,53 +289,53 @@ export default function WalletDetailPage() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-7 sm:py-10">
       {/* Page header with breadcrumb */}
-      <header className="flex flex-col gap-2">
-        <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          <Link href="/scan" className="hover:text-zinc-900 dark:hover:text-zinc-100">
+      <header className="flex flex-col gap-3">
+        <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+          <Link href="/scan" className="hover:text-zinc-900">
             Scan
           </Link>
           <span>/</span>
-          <span className="text-zinc-900 dark:text-zinc-100">Wallet #{indexParam}</span>
+          <span className="text-zinc-900">Wallet #{indexParam}</span>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">Kernel wallet #{indexParam}</h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+        <h1 className="text-3xl font-semibold tracking-tight">Kernel wallet #{indexParam}</h1>
+        <p className="text-sm leading-6 text-[var(--muted)]">
           View loan positions, balances, and execute repay or withdraw operations.
         </p>
       </header>
 
       {!owner ? (
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-100/50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <section className="rounded-2xl border border-dashed border-[var(--line)] bg-[var(--panel-subtle)] p-5">
+          <p className="text-sm text-[var(--muted)]">
             Connect your wallet using the button in the top right to view positions.
           </p>
         </section>
       ) : !kernelAddress ? (
-        <section className="rounded-2xl border border-red-200 bg-red-50 p-5 dark:border-red-900/50 dark:bg-red-950/30">
-          <p className="text-sm text-red-700 dark:text-red-300">Invalid wallet index.</p>
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-5">
+          <p className="text-sm text-red-700">Invalid wallet index.</p>
         </section>
       ) : (
         <>
           {/* Wallet info + chain selector bar */}
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-col gap-2 text-sm">
-                <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                <div className="flex items-center gap-2 text-[var(--muted)]">
                   <span>Connected wallet</span>
-                  <span className="font-mono text-zinc-900 dark:text-zinc-100">{shortAddress(owner)}</span>
+                  <span className="font-mono text-zinc-900">{shortAddress(owner)}</span>
                 </div>
-                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 dark:border-amber-700 dark:bg-amber-950/40">
+                <div className="rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-400">
+                    <span className="font-mono text-xs font-medium uppercase tracking-[0.15em] text-[var(--muted)]">
                       Loan wallet
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <span className="font-mono text-sm font-medium text-amber-900 dark:text-amber-200 break-all">{kernelAddress}</span>
+                    <span className="font-mono text-sm font-medium text-zinc-900 break-all">{kernelAddress}</span>
                     <button
                       type="button"
-                      className="shrink-0 rounded-md border border-amber-400 bg-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-900 hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-600 dark:bg-amber-800 dark:text-amber-100 dark:hover:bg-amber-700"
+                      className="shrink-0 rounded-md border border-zinc-900 bg-zinc-900 px-2.5 py-1 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-60"
                       disabled={isCopying}
                       onClick={copyAddress}
                     >
@@ -345,21 +345,21 @@ export default function WalletDetailPage() {
                   <div className="mt-1.5">
                     {nativeBalance !== null ? (
                       nativeBalance === 0n ? (
-                        <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+                        <span className="text-xs font-semibold text-red-600">
                           No gas &mdash; fund this wallet with {chain?.nativeSymbol ?? "native token"}
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-amber-900 dark:text-amber-200">
+                        <span className="text-xs font-medium text-zinc-900">
                           Gas balance: {formatUnits(nativeBalance, 18)} {chain?.nativeSymbol ?? ""}
                         </span>
                       )
                     ) : (
-                      <span className="text-xs text-amber-600 dark:text-amber-500">
+                      <span className="text-xs text-[var(--muted)]">
                         Gas balance: load positions to check
                       </span>
                     )}
                   </div>
-                  <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">
+                  <p className="mt-1.5 text-xs text-[var(--muted)]">
                     This is the smart wallet that holds your loan. Send gas ({chain?.nativeSymbol ?? "native token"}) and repay tokens to this address before executing rescue actions.
                   </p>
                 </div>
@@ -367,11 +367,11 @@ export default function WalletDetailPage() {
 
               <div className="flex flex-col items-end gap-2 self-start">
                 {autoDetecting ? (
-                  <span className="text-xs text-zinc-500 dark:text-zinc-400">Detecting chain…</span>
+                  <span className="text-xs text-[var(--muted)]">Detecting chain…</span>
                 ) : null}
                 <div className="flex flex-wrap items-center gap-2">
                 <select
-                  className="h-9 rounded-lg border border-zinc-200 bg-zinc-50 px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900"
+                  className="h-9 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
                   value={selectedChainId}
                   disabled={isRefreshing}
                   onChange={async (e) => {
@@ -395,7 +395,7 @@ export default function WalletDetailPage() {
 
                 <button
                   type="button"
-                  className="inline-flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="inline-flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700"
                   disabled={isRefreshing}
                   onClick={refresh}
                 >
@@ -406,32 +406,32 @@ export default function WalletDetailPage() {
             </div>
 
             {status ? (
-              <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">{status}</p>
+              <p className="mt-3 text-xs text-[var(--muted)]">{status}</p>
             ) : null}
             {error ? (
-              <p className="mt-3 text-xs text-red-600 dark:text-red-400">{error}</p>
+              <p className="mt-3 text-xs text-red-600">{error}</p>
             ) : null}
           </section>
 
           {/* ZeroDev bundler config (page-level, shared) */}
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
             <label className="flex flex-col gap-2">
-              <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                 ZeroDev Project ID or RPC URL
               </span>
               <input
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                className="h-11 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
                 value={zerodevInput}
                 onChange={(e) => setZerodevInput(e.target.value)}
                 placeholder="paste project ID or full RPC URL"
               />
-              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+              <span className="text-xs text-[var(--muted)]">
                 Go to{" "}
                 <a
                   href="https://dashboard.zerodev.app/projects/general"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-blue-600 hover:underline dark:text-blue-400"
+                  className="font-medium text-zinc-900 underline-offset-2 hover:underline"
                 >
                   dashboard.zerodev.app
                 </a>
@@ -442,55 +442,55 @@ export default function WalletDetailPage() {
           </section>
 
           {/* Rescue flow steps */}
-          <nav className="flex flex-wrap gap-3 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 dark:border-zinc-800 dark:bg-zinc-900">
+          <nav className="flex flex-wrap gap-3 text-xs font-medium text-[var(--muted)]">
+            <span className="rounded-full border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-1">
               1. Fund loan wallet
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="rounded-full border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-1">
               2. Repay debt
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="rounded-full border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-1">
               3. Withdraw collateral
             </span>
-            <span className="rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 dark:border-zinc-800 dark:bg-zinc-900">
+            <span className="rounded-full border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-1">
               4. Transfer out
             </span>
           </nav>
 
           {/* Wallet balances */}
           <section>
-            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <h2 className="mb-3 font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
               Wallet balances
             </h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
                 <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
                   {chain?.nativeSymbol ?? "Native"} (gas)
                 </div>
                 <div className="mt-1.5 text-lg font-semibold">
                   {nativeBalance === null ? (
-                    <span className="text-zinc-300 dark:text-zinc-600">&mdash;</span>
+                    <span className="text-zinc-300">&mdash;</span>
                   ) : (
                     formatUnits(nativeBalance, 18)
                   )}
                 </div>
                 {nativeBalance !== null && nativeBalance === 0n ? (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                  <p className="mt-1 text-xs text-red-600">
                     No gas &mdash; send {chain?.nativeSymbol ?? "native token"} to the loan wallet address above.
                   </p>
                 ) : null}
               </div>
-              <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
                 <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">{assets.usdc.symbol}</div>
                 <div className="mt-1.5 text-lg font-semibold">
                   {usdcBalance === null ? (
-                    <span className="text-zinc-300 dark:text-zinc-600">&mdash;</span>
+                    <span className="text-zinc-300">&mdash;</span>
                   ) : (
                     formatUnits(usdcBalance, assets.usdc.decimals)
                   )}
                 </div>
               </div>
-              <div className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
                 <TransferOutAction
                   chainId={selectedChainId}
                   owner={owner}
@@ -506,18 +506,18 @@ export default function WalletDetailPage() {
           </section>
 
           {/* Aave V3 position */}
-          <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+              <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                 Aave V3 — Loan details
               </h2>
               {aaveSummary?.healthFactor ? (
                 <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                   Number(aaveSummary.healthFactor) > 2
-                    ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                    ? "bg-zinc-900 text-white"
                     : Number(aaveSummary.healthFactor) > 1.2
-                      ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                      : "bg-red-500/10 text-red-700 dark:text-red-400"
+                      ? "bg-zinc-200 text-zinc-900"
+                      : "bg-red-500/10 text-red-700"
                 }`}>
                   HF: {aaveSummary.healthFactor}
                 </span>
@@ -525,39 +525,39 @@ export default function WalletDetailPage() {
             </div>
 
             {!aaveSummary && !aaveAccountData ? (
-              <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+              <p className="mt-3 text-sm text-[var(--muted)]">
                 Click &ldquo;Load positions&rdquo; above to fetch Aave data.
               </p>
             ) : (
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral (USD)</div>
                   <div className="mt-1 text-base font-semibold">
                     {aaveSummary?.totalCollateralUSD ??
                       (aaveAccountData ? formatUnits(aaveAccountData.totalCollateralBase, 8) : "—")}
                   </div>
                 </div>
-                <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Debt (USD)</div>
-                  <div className="mt-1 text-base font-semibold text-red-600 dark:text-red-400">
+                  <div className="mt-1 text-base font-semibold text-red-600">
                     {aaveSummary?.totalBorrowsUSD ??
                       (aaveAccountData ? formatUnits(aaveAccountData.totalDebtBase, 8) : "—")}
                   </div>
                 </div>
-                <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Available borrows</div>
                   <div className="mt-1 text-base font-semibold">
                     {aaveSummary?.availableBorrowsUSD ?? "—"}
                   </div>
                 </div>
-                <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Health factor</div>
                   <div className="mt-1 text-base font-semibold">
                     {aaveSummary?.healthFactor ??
                       (aaveAccountData ? formatUnits(aaveAccountData.healthFactor, 18) : "—")}
                   </div>
                 </div>
-                <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">LTV / Liq. threshold</div>
                   <div className="mt-1 text-base font-semibold">
                     {aaveSummary
@@ -586,18 +586,18 @@ export default function WalletDetailPage() {
 
           {/* Morpho Blue (Base only) */}
           {selectedChainId === 8453 ? (
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+            <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+                <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                   Morpho Blue — Loan details
                 </h2>
                 {morphoSummary?.healthFactor ? (
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                     Number(morphoSummary.healthFactor) > 2
-                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      ? "bg-zinc-900 text-white"
                       : Number(morphoSummary.healthFactor) > 1.2
-                        ? "bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                        : "bg-red-500/10 text-red-700 dark:text-red-400"
+                        ? "bg-zinc-200 text-zinc-900"
+                        : "bg-red-500/10 text-red-700"
                   }`}>
                     HF: {morphoSummary.healthFactor}
                   </span>
@@ -605,20 +605,20 @@ export default function WalletDetailPage() {
               </div>
 
               {!morphoPosition && !morphoSummary ? (
-                <p className="mt-3 text-sm text-zinc-500 dark:text-zinc-400">
+                <p className="mt-3 text-sm text-[var(--muted)]">
                   Click &ldquo;Load positions&rdquo; above to fetch Morpho data for {MORPHO_BASE_MARKETS.cbBTC_USDC.label}.
                 </p>
               ) : (
                 <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Supply shares</div>
                     <div className="mt-1 text-base font-semibold">{morphoPosition?.supplyShares.toString() ?? "—"}</div>
                   </div>
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Borrow shares</div>
                     <div className="mt-1 text-base font-semibold">{morphoPosition?.borrowShares.toString() ?? "—"}</div>
                   </div>
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral</div>
                     <div className="mt-1 text-base font-semibold">
                       {morphoPosition
@@ -626,15 +626,15 @@ export default function WalletDetailPage() {
                         : "—"}
                     </div>
                   </div>
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Collateral (USD)</div>
                     <div className="mt-1 text-base font-semibold">{morphoSummary?.collateralUsd ?? "—"}</div>
                   </div>
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Borrow (USD)</div>
-                    <div className="mt-1 text-base font-semibold text-red-600 dark:text-red-400">{morphoSummary?.borrowAssetsUsd ?? "—"}</div>
+                    <div className="mt-1 text-base font-semibold text-red-600">{morphoSummary?.borrowAssetsUsd ?? "—"}</div>
                   </div>
-                  <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Health factor</div>
                     <div className="mt-1 text-base font-semibold">{morphoSummary?.healthFactor ?? "—"}</div>
                   </div>

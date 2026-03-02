@@ -92,12 +92,12 @@ export function MorphoRescueActions(props: {
   }, [amountInput, selectedDecimals, useMax]);
 
   return (
-    <section className="mt-4 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+    <section className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--panel-subtle)] p-5">
+      <h3 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
         Rescue actions
       </h3>
 
-      <div className="mt-3 space-y-3 text-sm text-zinc-700 dark:text-zinc-300">
+      <div className="mt-3 space-y-3 text-sm text-zinc-700">
         <p>
           Withdraw collateral or repay debt on your ZeroDev Kernel wallet via Morpho Blue.
         </p>
@@ -106,7 +106,7 @@ export function MorphoRescueActions(props: {
           <label className="flex items-center gap-2">
             <span className="text-sm">Action</span>
             <select
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+              className="h-11 rounded-lg border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-zinc-900"
               value={action}
               disabled={isSubmitting}
               onChange={(e) => {
@@ -133,7 +133,7 @@ export function MorphoRescueActions(props: {
             <label className="flex items-center gap-2">
               <span className="text-sm">{amountLabel}</span>
               <input
-                className="h-11 w-40 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                className="h-11 w-40 rounded-lg border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-zinc-900"
                 value={amountInput}
                 disabled={isSubmitting}
                 onChange={(e) => setAmountInput(e.target.value)}
@@ -145,7 +145,7 @@ export function MorphoRescueActions(props: {
 
         <button
           type="button"
-          className="inline-flex h-11 w-fit items-center justify-center rounded-full bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className="inline-flex h-11 w-fit items-center justify-center rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
           disabled={!bundlerUrl || amountForProtocol === null || isSubmitting}
           onClick={async () => {
             if (isSubmitting) return;
@@ -214,10 +214,10 @@ export function MorphoRescueActions(props: {
           {isSubmitting ? "Submitting…" : "Execute Morpho action via Kernel"}
         </button>
 
-        {status ? <p className="text-sm text-zinc-600 dark:text-zinc-400">{status}</p> : null}
-        {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
+        {status ? <p className="text-sm text-[var(--muted)]">{status}</p> : null}
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
         {lastUserOpHash ? (
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          <p className="text-sm text-[var(--muted)]">
             UserOp hash: <span className="font-mono">{lastUserOpHash}</span>
           </p>
         ) : null}

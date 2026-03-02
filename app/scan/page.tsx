@@ -49,35 +49,38 @@ export default function ScanPage() {
   };
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Scan for wallets</h1>
-        <p className="text-sm leading-6 text-zinc-600 dark:text-zinc-400">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-7 sm:py-10">
+      <header className="flex flex-col gap-3">
+        <p className="font-mono text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
+          Scanner
+        </p>
+        <h1 className="text-3xl font-semibold tracking-tight">Scan for wallets</h1>
+        <p className="text-sm leading-6 text-[var(--muted)]">
           Discover your per-loan ZeroDev Kernel smart accounts by scanning sequential indices.
         </p>
       </header>
 
       {!address ? (
-        <section className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-100/50 p-5 dark:border-zinc-700 dark:bg-zinc-900/50">
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <section className="rounded-2xl border border-dashed border-[var(--line)] bg-[var(--panel-subtle)] p-5">
+          <p className="text-sm text-[var(--muted)]">
             Connect your wallet using the button in the top right to start scanning.
           </p>
         </section>
       ) : (
           <>
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+            <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
+              <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                 Settings
               </h2>
 
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">Start index</span>
+                  <span className="text-sm text-zinc-700">Start index</span>
                   <input
                     type="number"
                     min={0}
                     step={1}
-                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                    className="h-11 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
                     inputMode="numeric"
                     value={startIndex}
                     onChange={(e) => setStartIndex(Number(e.target.value))}
@@ -85,12 +88,12 @@ export default function ScanPage() {
                   />
                 </label>
                 <label className="flex flex-col gap-2">
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">End index</span>
+                  <span className="text-sm text-zinc-700">End index</span>
                   <input
                     type="number"
                     min={0}
                     step={1}
-                    className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-950"
+                    className="h-11 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
                     inputMode="numeric"
                     value={endIndex}
                     onChange={(e) => setEndIndex(Number(e.target.value))}
@@ -100,14 +103,14 @@ export default function ScanPage() {
               </div>
 
               <div className="mt-6">
-                <div className="text-sm text-zinc-700 dark:text-zinc-300">Chains</div>
+                <div className="text-sm text-zinc-700">Chains</div>
                 <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {SUPPORTED_CHAINS.map((c) => {
                     const checked = selectedChains.includes(c.id);
                     return (
                       <label
                         key={c.id}
-                        className="flex cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                        className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-2 text-sm"
                       >
                         <input
                           type="checkbox"
@@ -129,7 +132,7 @@ export default function ScanPage() {
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  className="inline-flex h-11 items-center justify-center rounded-full bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="inline-flex h-11 items-center justify-center rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
                   disabled={isScanning || selectedChains.length === 0}
                   onClick={async () => {
                     setError(null);
@@ -234,7 +237,7 @@ export default function ScanPage() {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex h-11 items-center justify-center rounded-full border border-zinc-200 bg-white px-5 text-sm font-semibold text-zinc-900 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900"
+                  className="inline-flex h-11 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--panel)] px-5 text-sm font-semibold text-zinc-900 hover:bg-[var(--panel-subtle)] disabled:opacity-50"
                   disabled={!isScanning}
                   onClick={() => {
                     cancelRef.current = true;
@@ -243,35 +246,35 @@ export default function ScanPage() {
                   Cancel
                 </button>
 
-                <div className="text-sm text-zinc-600 dark:text-zinc-400">
+                <div className="text-sm text-[var(--muted)]">
                   Connected chain: {supportedChain?.name ?? chainId ?? "unknown"}
                 </div>
               </div>
 
               {status ? (
-                <p className="mt-4 text-sm text-zinc-600 dark:text-zinc-400">{status}</p>
+                <p className="mt-4 text-sm text-[var(--muted)]">{status}</p>
               ) : null}
               {error ? (
-                <p className="mt-4 text-sm text-red-600 dark:text-red-400">{error}</p>
+                <p className="mt-4 text-sm text-red-600">{error}</p>
               ) : null}
             </section>
 
-            <section className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-700 dark:text-zinc-300">
+            <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
+              <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                 Results
               </h2>
 
               {!rows ? (
-                <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
+                <p className="mt-3 text-sm text-[var(--muted)]">
                   Run a scan to populate results.
                 </p>
               ) : (
                 <div className="mt-4 flex flex-col gap-3">
-                  <div className="text-xs text-zinc-600 dark:text-zinc-400">
+                  <div className="text-xs text-[var(--muted)]">
                     Showing {onlyDeployed ? "deployed-only" : "all"} wallets.
                   </div>
 
-                  <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                  <label className="flex items-center gap-2 text-sm text-zinc-700">
                     <input
                       type="checkbox"
                       checked={onlyDeployed}
@@ -283,7 +286,7 @@ export default function ScanPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[560px] border-separate border-spacing-y-2 text-sm">
                       <thead>
-                        <tr className="text-left text-xs text-zinc-500 dark:text-zinc-400">
+                        <tr className="text-left text-xs text-[var(--muted)]">
                           <th className="px-3">Index</th>
                           <th className="px-3">Kernel address</th>
                           {selectedChains.map((cid) => (
@@ -302,10 +305,10 @@ export default function ScanPage() {
                           .map((r) => (
                             <tr
                               key={r.index}
-                              className="cursor-pointer rounded-xl bg-zinc-50 text-zinc-900 transition-colors hover:bg-zinc-100 dark:bg-black dark:text-zinc-50 dark:hover:bg-zinc-900"
+                              className="cursor-pointer rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] text-zinc-900 transition-colors hover:bg-zinc-100"
                               onClick={() => router.push(`/wallet/${r.index}`)}
                             >
-                              <td className="px-3 py-2 font-mono text-blue-600 dark:text-blue-400">
+                              <td className="px-3 py-2 font-mono">
                                 {r.index}
                               </td>
                               <td className="px-3 py-2 font-mono">
@@ -316,11 +319,11 @@ export default function ScanPage() {
                                 return (
                                   <td key={cid} className="px-3 py-2">
                                     {deployed ? (
-                                      <span className="inline-flex items-center rounded-full bg-green-600/10 px-2 py-1 text-xs font-semibold text-green-700 dark:text-green-400">
+                                      <span className="inline-flex items-center rounded-full border border-zinc-900 bg-zinc-900 px-2 py-1 text-xs font-semibold text-white">
                                         deployed
                                       </span>
                                     ) : (
-                                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                      <span className="text-xs text-[var(--muted)]">
                                         —
                                       </span>
                                     )}

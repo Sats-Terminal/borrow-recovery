@@ -73,7 +73,7 @@ export function TransferOutAction(props: {
           </div>
           <div className="mt-1 text-lg font-semibold">
             {balance === null ? (
-              <span className="text-zinc-300 dark:text-zinc-600">&mdash;</span>
+              <span className="text-zinc-300">&mdash;</span>
             ) : (
               formatUnits(balance, asset.decimals)
             )}
@@ -82,7 +82,7 @@ export function TransferOutAction(props: {
         {hasBalance ? (
           <button
             type="button"
-            className="inline-flex h-9 items-center rounded-lg bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50 dark:bg-emerald-500 dark:hover:bg-emerald-400"
+            className="inline-flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
             disabled={!bundlerUrl || isSubmitting}
             onClick={async () => {
               if (isSubmitting) return;
@@ -134,10 +134,10 @@ export function TransferOutAction(props: {
           </button>
         ) : null}
       </div>
-      {status ? <p className="text-xs text-zinc-500 dark:text-zinc-400">{status}</p> : null}
-      {error ? <p className="text-xs text-red-600 dark:text-red-400">{error}</p> : null}
+      {status ? <p className="text-xs text-zinc-500">{status}</p> : null}
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
       {lastUserOpHash ? (
-        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs text-zinc-500">
           UserOp: <span className="font-mono">{lastUserOpHash}</span>
         </p>
       ) : null}
