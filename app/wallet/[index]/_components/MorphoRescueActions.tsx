@@ -189,9 +189,10 @@ export function MorphoRescueActions(props: {
               );
 
               const chainConfig = getChainConfig(chainId);
+              if (!chainConfig) throw new Error(`Unsupported chain ${chainId}`);
               const sentHash = await submitKernelUserOperationV07({
                 bundlerUrl,
-                chainRpcUrl: chainConfig?.rpcUrl ?? "https://mainnet.base.org",
+                chainRpcUrl: chainConfig.rpcUrl,
                 owner,
                 kernelAddress,
                 chainId,

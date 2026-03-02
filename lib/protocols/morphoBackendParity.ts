@@ -2,10 +2,10 @@ import { ORACLE_PRICE_SCALE, type MarketId } from "@morpho-org/blue-sdk";
 import { blueAbi, blueOracleAbi, fetchAccrualPosition } from "@morpho-org/blue-sdk-viem";
 import { BigNumber, Contract, ethers, providers } from "ethers";
 import { createPublicClient, custom, http, type Address } from "viem";
-import { base } from "viem/chains";
 import { erc20Abi as ERC20_ABI } from "viem";
 
 import { CHAIN_ASSETS } from "../assets";
+import type { SupportedChainId } from "../chains";
 import type { Hex } from "../eth/types";
 
 export type MorphoParityMarketConfig = {
@@ -67,7 +67,6 @@ function createBasePublicClient(parameters: {
   const { rpcUrl, provider } = parameters;
   if (provider) {
     return createPublicClient({
-      chain: base,
       transport: custom(provider),
     }) as unknown as BasePublicClient;
   }
@@ -75,7 +74,6 @@ function createBasePublicClient(parameters: {
     throw new Error("Morpho summary fetch requires either rpcUrl or wallet provider");
   }
   return createPublicClient({
-    chain: base,
     transport: http(rpcUrl),
   }) as unknown as BasePublicClient;
 }
@@ -122,14 +120,15 @@ function mulDivUp(a: bigint, b: bigint, c: bigint): bigint {
 }
 
 function buildMorphoSummary(parameters: {
+  chainId: SupportedChainId;
   collateral: bigint;
   borrowAssets: bigint;
   price: bigint;
   lltv: bigint;
 }): MorphoParitySummary {
-  const { collateral, borrowAssets, price, lltv } = parameters;
-  const collateralDecimals = CHAIN_ASSETS[8453].btcCollateral.decimals;
-  const loanDecimals = CHAIN_ASSETS[8453].usdc.decimals;
+  const { chainId, collateral, borrowAssets, price, lltv } = parameters;
+  const collateralDecimals = CHAIN_ASSETS[chainId].btcCollateral.decimals;
+  const loanDecimals = CHAIN_ASSETS[chainId].usdc.decimals;
 
   const collateralValueInLoanRaw = (collateral * price) / ORACLE_PRICE_SCALE;
   const collateralUsd = Number(ethers.utils.formatUnits(collateralValueInLoanRaw, loanDecimals));
@@ -164,17 +163,18 @@ function buildMorphoSummary(parameters: {
 }
 
 async function fetchMorphoSummaryViaAccrualPosition(parameters: {
+  chainId: SupportedChainId;
   client: BasePublicClient;
   marketId: MarketId;
   userAddress: Address;
   lltv: bigint;
 }): Promise<MorphoParitySummary | null> {
-  const { client, marketId, userAddress, lltv } = parameters;
+  const { chainId, client, marketId, userAddress, lltv } = parameters;
   const position = await fetchAccrualPosition(
     userAddress,
     marketId,
     client as never,
-    { chainId: base.id, deployless: false },
+    { chainId, deployless: false },
   );
 
   if (position.collateral === 0n && position.borrowShares === 0n) return null;
@@ -185,6 +185,7 @@ async function fetchMorphoSummaryViaAccrualPosition(parameters: {
   }
 
   return buildMorphoSummary({
+    chainId,
     collateral: position.collateral,
     borrowAssets: position.borrowAssets,
     price,
@@ -193,12 +194,13 @@ async function fetchMorphoSummaryViaAccrualPosition(parameters: {
 }
 
 async function fetchMorphoSummaryViaRawContractReads(parameters: {
+  chainId: SupportedChainId;
   client: BasePublicClient;
   marketId: MarketId;
   userAddress: Address;
   lltv: bigint;
 }): Promise<MorphoParitySummary | null> {
-  const { client, marketId, userAddress, lltv } = parameters;
+  const { chainId, client, marketId, userAddress, lltv } = parameters;
 
   const [positionResult, marketResult, marketParamsResult] = await Promise.all([
     client.readContract({
@@ -239,6 +241,7 @@ async function fetchMorphoSummaryViaRawContractReads(parameters: {
 
   const borrowAssets = mulDivUp(borrowShares, totalBorrowAssets, totalBorrowShares);
   return buildMorphoSummary({
+    chainId,
     collateral,
     borrowAssets,
     price,
@@ -437,12 +440,13 @@ export async function buildMorphoWithdrawTxsWithBackendLogic(parameters: {
 }
 
 export async function fetchMorphoSummaryWithBackendLogic(parameters: {
+  chainId: SupportedChainId;
   rpcUrl?: string;
   provider?: Eip1193Provider;
   market: MorphoParityMarketConfig;
   userAddress: Address;
 }): Promise<MorphoParitySummary | null> {
-  const { rpcUrl, provider, market, userAddress } = parameters;
+  const { chainId, rpcUrl, provider, market, userAddress } = parameters;
   const clients = getBaseClientCandidates({ rpcUrl, provider });
   const marketId = market.marketId as MarketId;
   const failures: string[] = [];
@@ -452,6 +456,7 @@ export async function fetchMorphoSummaryWithBackendLogic(parameters: {
   for (const candidate of clients) {
     try {
       const summary = await fetchMorphoSummaryViaAccrualPosition({
+        chainId,
         client: candidate.client,
         marketId,
         userAddress,
@@ -468,6 +473,7 @@ export async function fetchMorphoSummaryWithBackendLogic(parameters: {
   for (const candidate of clients) {
     try {
       const summary = await fetchMorphoSummaryViaRawContractReads({
+        chainId,
         client: candidate.client,
         marketId,
         userAddress,

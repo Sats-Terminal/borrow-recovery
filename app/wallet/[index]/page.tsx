@@ -260,6 +260,7 @@ export default function WalletDetailPage() {
           const connectedProvider = await getProvider();
           if (isStale()) return;
           const summary = await fetchMorphoSummaryWithBackendLogic({
+            chainId: refreshChainId,
             rpcUrl: refreshChain.rpcUrl,
             provider: connectedProvider,
             market: MORPHO_BASE_CBBTC_USDC_MARKET,
