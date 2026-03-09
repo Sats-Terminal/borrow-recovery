@@ -11,6 +11,7 @@ import type { Address, Hex } from "@/lib/eth/types";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
 import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
+import { reportActionError } from "./actionError";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 export function NativeTransferOutAction(props: {
@@ -167,7 +168,14 @@ export function NativeTransferOutAction(props: {
                 await onSuccess?.();
                 setStatusSafe("Transfer confirmed.");
               } catch (e) {
-                setErrorSafe(e instanceof Error ? e.message : `${nativeSymbol} transfer failed.`);
+                const message = reportActionError({
+                  context: `${nativeSymbol} transfer`,
+                  error: e,
+                  fallbackMessage: `${nativeSymbol} transfer failed.`,
+                  toastTitle: `${nativeSymbol} transfer failed`,
+                  notify,
+                });
+                setErrorSafe(message);
                 setStatusSafe(null);
               } finally {
                 setIsSubmittingSafe(false);

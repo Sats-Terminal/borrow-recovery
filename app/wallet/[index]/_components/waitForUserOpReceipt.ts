@@ -3,6 +3,8 @@
 import { jsonRpcFetch } from "@/lib/rpc/jsonRpc";
 import type { Hex } from "@/lib/eth/types";
 
+import { describeActionError } from "./actionError";
+
 type UserOperationReceiptResult = {
   success?: boolean;
   reason?: string;
@@ -29,6 +31,8 @@ export async function waitForUserOpReceipt(parameters: {
   } = parameters;
 
   const start = Date.now();
+  let lastTransientErrorMessage: string | null = null;
+  let lastLoggedTransientErrorMessage: string | null = null;
   while (Date.now() - start < timeoutMs) {
     try {
       const result = await jsonRpcFetch<UserOperationReceiptResult | null>(
@@ -56,10 +60,19 @@ export async function waitForUserOpReceipt(parameters: {
       if (error instanceof Error && error.message.startsWith(`${operationLabel} reverted`)) {
         throw error;
       }
+
+      const errorMessage = describeActionError(error, "");
+      lastTransientErrorMessage = errorMessage || null;
+      if (errorMessage && errorMessage !== lastLoggedTransientErrorMessage) {
+        lastLoggedTransientErrorMessage = errorMessage;
+        console.warn(`[${operationLabel}] transient receipt polling error`, error);
+      }
     }
 
     await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 
-  throw new Error(`Timed out waiting for ${operationLabel} to be mined.`);
+  throw new Error(
+    `Timed out waiting for ${operationLabel} to be mined.${lastTransientErrorMessage ? ` Last receipt error: ${lastTransientErrorMessage}` : ""}`,
+  );
 }

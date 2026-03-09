@@ -11,6 +11,7 @@ import { encodeErc20Approve } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
 import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
+import { reportActionError } from "./actionError";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 type ProtocolAction = "withdraw" | "repay";
@@ -84,9 +85,9 @@ export function AaveRescueActions(props: {
   const setLastUserOpHashSafe = (value: Hex | null) => {
     if (mountedRef.current) setLastUserOpHash(value);
   };
-  const setIsSubmittingSafe = (value: boolean) => {
-    if (mountedRef.current) setIsSubmitting(value);
-  };
+  // const setIsSubmittingSafe = (value: boolean) => {
+  //   if (mountedRef.current) setIsSubmitting(value);
+  // };
 
   const selectedAsset = action === "withdraw" ? collateralAsset : repayAsset;
   const maxLabel = action === "withdraw" ? "Withdraw all" : "Repay all";
@@ -162,7 +163,7 @@ export function AaveRescueActions(props: {
       return;
     }
 
-    setIsSubmittingSafe(true);
+    setIsSubmitting(true);
 
     try {
       setStatusSafe("Switching network (if needed)…");
@@ -286,18 +287,18 @@ export function AaveRescueActions(props: {
         setStatusSafe("Withdraw confirmed.");
       }
     } catch (e: unknown) {
-      let msg = "Rescue action failed.";
-      if (e instanceof Error) {
-        const inner = (e as unknown as Record<string, unknown>).data ?? (e as unknown as Record<string, unknown>).error;
-        const detail = inner && typeof inner === "object" && "message" in inner
-          ? (inner as { message: string }).message
-          : null;
-        msg = detail ? `${e.message} — ${detail}` : e.message;
-      }
+      const actionLabel = action === "repay" ? "repay" : "withdraw";
+      const msg = reportActionError({
+        context: `Aave ${actionLabel}`,
+        error: e,
+        fallbackMessage: `Aave ${actionLabel} failed.`,
+        toastTitle: `Aave ${actionLabel} failed`,
+        notify,
+      });
       setErrorSafe(msg);
       setStatusSafe(null);
     } finally {
-      setIsSubmittingSafe(false);
+      setIsSubmitting(false);
     }
   };
 

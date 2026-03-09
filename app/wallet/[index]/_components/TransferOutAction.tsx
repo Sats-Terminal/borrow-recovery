@@ -9,6 +9,7 @@ import { encodeErc20Transfer } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
 import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
+import { reportActionError } from "./actionError";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 function formatUnits(value: bigint, decimals: number): string {
@@ -160,7 +161,14 @@ export function TransferOutAction(props: {
                 await onSuccess?.();
                 setStatusSafe("Transfer confirmed.");
               } catch (e) {
-                setErrorSafe(e instanceof Error ? e.message : "Transfer failed.");
+                const message = reportActionError({
+                  context: `${asset.symbol} transfer`,
+                  error: e,
+                  fallbackMessage: `${asset.symbol} transfer failed.`,
+                  toastTitle: `${asset.symbol} transfer failed`,
+                  notify,
+                });
+                setErrorSafe(message);
                 setStatusSafe(null);
               } finally {
                 setIsSubmittingSafe(false);

@@ -14,6 +14,7 @@ import {
 } from "@/lib/protocols/morphoBackendParity";
 
 import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
+import { reportActionError } from "./actionError";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 type MorphoAction = "withdraw" | "repay";
 
@@ -263,7 +264,15 @@ export function MorphoRescueActions(props: {
               await onSuccess?.();
               setStatusSafe("Confirmed.");
             } catch (e) {
-              setErrorSafe(e instanceof Error ? e.message : "Rescue action failed.");
+              const actionLabel = action === "repay" ? "repay" : "withdraw";
+              const message = reportActionError({
+                context: `Morpho ${actionLabel}`,
+                error: e,
+                fallbackMessage: `Morpho ${actionLabel} failed.`,
+                toastTitle: `Morpho ${actionLabel} failed`,
+                notify,
+              });
+              setErrorSafe(message);
               setStatusSafe(null);
             } finally {
               setIsSubmittingSafe(false);
