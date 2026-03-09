@@ -10,6 +10,9 @@ import { encodeAaveRepay, encodeAaveWithdraw, MAX_UINT256 } from "@/lib/protocol
 import { encodeErc20Approve } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
+import { ButtonSpinner } from "./ButtonSpinner";
+import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
+
 type ProtocolAction = "withdraw" | "repay";
 
 function parseUnits(value: string, decimals: number): bigint {
@@ -30,15 +33,32 @@ type Asset = {
 
 export function AaveRescueActions(props: {
   chainId: SupportedChainId;
+  chainRpcUrl: string;
   owner: Address;
   kernelAddress: Address;
   collateralAsset: Asset;
   repayAsset: Asset;
   bundlerUrl: string;
+  ensureActionReady: () => boolean;
+  notify: (toast: { title: string; description?: string; tone?: "error" | "info" }) => void;
+  onSuccess?: (() => Promise<void> | void) | undefined;
   request: (method: string, params?: unknown[] | object) => Promise<unknown>;
   switchChain: (chainId: number) => Promise<void>;
 }) {
-  const { chainId, owner, kernelAddress, collateralAsset, repayAsset, bundlerUrl, request, switchChain } = props;
+  const {
+    chainId,
+    chainRpcUrl,
+    owner,
+    kernelAddress,
+    collateralAsset,
+    repayAsset,
+    bundlerUrl,
+    ensureActionReady,
+    notify,
+    onSuccess,
+    request,
+    switchChain,
+  } = props;
   const [action, setAction] = useState<ProtocolAction>("withdraw");
   const [useMax, setUseMax] = useState(true);
   const [amountInput, setAmountInput] = useState("0");
@@ -85,14 +105,25 @@ export function AaveRescueActions(props: {
 
   const executeAction = async () => {
     if (isSubmitting) return;
-    setIsSubmittingSafe(true);
+
     setErrorSafe(null);
     setStatusSafe(null);
     setLastUserOpHashSafe(null);
 
-    try {
-      if (amountForProtocol === null) throw new Error("Invalid amount.");
+    if (!ensureActionReady()) return;
+    if (amountForProtocol === null) {
+      const message = `Enter a valid ${selectedAsset.symbol} amount before continuing.`;
+      notify({
+        title: "Enter a valid amount",
+        description: message,
+      });
+      setErrorSafe(message);
+      return;
+    }
 
+    setIsSubmittingSafe(true);
+
+    try {
       setStatusSafe("Switching network (if needed)…");
       await switchChain(chainId);
 
@@ -106,6 +137,12 @@ export function AaveRescueActions(props: {
         : parseUnits(amountForProtocol, selectedAsset.decimals);
 
       if (action === "repay") {
+        notify({
+          title: "Two wallet confirmations required",
+          description: "Your wallet will prompt once for token approval and a second time for the repay action.",
+          tone: "info",
+        });
+
         // Step 1: Approve USDC to Aave Pool (separate UserOp).
         setStatusSafe("Step 1/2: Approving repay token to Aave Pool…");
         const approveCallData = encodeErc20Approve(poolAddress, MAX_UINT256);
@@ -116,7 +153,7 @@ export function AaveRescueActions(props: {
 
         const approveHash = await submitKernelUserOperationV07({
           bundlerUrl,
-          chainRpcUrl: chain.rpcUrl,
+          chainRpcUrl,
           owner,
           kernelAddress,
           chainId,
@@ -127,10 +164,19 @@ export function AaveRescueActions(props: {
         setStatusSafe("Step 1/2: Approve submitted. Waiting for confirmation…");
 
         // Wait for approve to be mined — poll the bundler for receipt
-        await waitForUserOp(bundlerUrl, approveHash);
+        await waitForUserOpReceipt({
+          bundlerUrl,
+          userOpHash: approveHash,
+          operationLabel: "Approve UserOperation",
+        });
 
         // Step 2: Repay debt
-        setStatusSafe("Step 2/2: Repaying debt to Aave Pool…");
+        notify({
+          title: "One more wallet popup is coming",
+          description: "Approval is done. Confirm the second wallet prompt to submit the repay action.",
+          tone: "info",
+        });
+        setStatusSafe("Step 2/2: Approval confirmed. Confirm the second wallet popup to repay…");
         const repayCallData = encodeAaveRepay({
           asset: repayAsset.address,
           amount: rawAmount,
@@ -144,7 +190,7 @@ export function AaveRescueActions(props: {
 
         const repayHash = await submitKernelUserOperationV07({
           bundlerUrl,
-          chainRpcUrl: chain.rpcUrl,
+          chainRpcUrl,
           owner,
           kernelAddress,
           chainId,
@@ -154,7 +200,15 @@ export function AaveRescueActions(props: {
         });
 
         setLastUserOpHashSafe(repayHash);
-        setStatusSafe("Repay submitted.");
+        setStatusSafe("Repay submitted. Waiting for confirmation…");
+        await waitForUserOpReceipt({
+          bundlerUrl,
+          userOpHash: repayHash,
+          operationLabel: "Repay UserOperation",
+        });
+        setStatusSafe("Repay confirmed. Refreshing positions…");
+        await onSuccess?.();
+        setStatusSafe("Repay confirmed.");
       } else {
         // Withdraw: single UserOp
         setStatusSafe("Withdrawing collateral from Aave Pool…");
@@ -170,7 +224,7 @@ export function AaveRescueActions(props: {
 
         const withdrawHash = await submitKernelUserOperationV07({
           bundlerUrl,
-          chainRpcUrl: chain.rpcUrl,
+          chainRpcUrl,
           owner,
           kernelAddress,
           chainId,
@@ -180,7 +234,15 @@ export function AaveRescueActions(props: {
         });
 
         setLastUserOpHashSafe(withdrawHash);
-        setStatusSafe("Withdraw submitted.");
+        setStatusSafe("Withdraw submitted. Waiting for confirmation…");
+        await waitForUserOpReceipt({
+          bundlerUrl,
+          userOpHash: withdrawHash,
+          operationLabel: "Withdraw UserOperation",
+        });
+        setStatusSafe("Withdraw confirmed. Refreshing positions…");
+        await onSuccess?.();
+        setStatusSafe("Withdraw confirmed.");
       }
     } catch (e: unknown) {
       let msg = "Rescue action failed.";
@@ -208,6 +270,18 @@ export function AaveRescueActions(props: {
         <p>
           Withdraw collateral or repay debt on your ZeroDev Kernel wallet via Aave.
         </p>
+
+        {action === "withdraw" ? (
+          <p className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--muted)]">
+            Withdraw sends collateral directly to your <strong>connected wallet</strong>. It does not return funds to the loan wallet first.
+          </p>
+        ) : null}
+
+        {action === "repay" ? (
+          <p className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--muted)]">
+            Repay triggers <strong>two wallet popups</strong>: first to approve {repayAsset.symbol}, then a second one to submit the repay action.
+          </p>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">
@@ -252,11 +326,12 @@ export function AaveRescueActions(props: {
 
         <button
           type="button"
-          className="inline-flex h-11 w-fit items-center justify-center rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
-          disabled={!bundlerUrl || amountForProtocol === null || isSubmitting}
+          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+          disabled={isSubmitting}
           onClick={executeAction}
         >
-          {isSubmitting ? "Submitting…" : "Execute Aave action via Kernel"}
+          {isSubmitting ? <ButtonSpinner /> : null}
+          <span>{isSubmitting ? "Submitting…" : "Execute Aave action via Kernel"}</span>
         </button>
 
         {action === "repay" && useMax ? (
@@ -277,66 +352,4 @@ export function AaveRescueActions(props: {
       </div>
     </section>
   );
-}
-
-type UserOperationReceiptResult = {
-  success?: boolean;
-  reason?: string;
-  receipt?: {
-    status?: Hex | string;
-    blockNumber?: Hex | string;
-    transactionHash?: Hex | string;
-  };
-  blockNumber?: Hex | string;
-  transactionHash?: Hex | string;
-};
-
-/** Poll the bundler for UserOp receipt until mined+successful (timeout 60s). */
-async function waitForUserOp(bundlerUrl: string, userOpHash: Hex): Promise<void> {
-  const start = Date.now();
-  while (Date.now() - start < 60_000) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
-    try {
-      const res = await fetch(bundlerUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_getUserOperationReceipt",
-          params: [userOpHash],
-        }),
-      });
-      if (!res.ok) continue;
-      const json = (await res.json()) as { result?: UserOperationReceiptResult | null };
-      const result = json?.result;
-      if (result) {
-        const receipt = result.receipt;
-        const blockNumber = receipt?.blockNumber ?? result.blockNumber;
-        const txHash = receipt?.transactionHash ?? result.transactionHash;
-        const statusRaw = typeof receipt?.status === "string" ? receipt.status.toLowerCase() : null;
-        const hasExplicitFailure = result.success === false || statusRaw === "0x0" || statusRaw === "0";
-        const hasExplicitSuccess = result.success === true || statusRaw === "0x1" || statusRaw === "1";
-
-        // Some bundlers return intermediate objects. Continue until mined + explicit success.
-        if (blockNumber && txHash) {
-          if (hasExplicitFailure) {
-            throw new Error(`Approve UserOp reverted${result.reason ? `: ${result.reason}` : "."}`);
-          }
-          if (hasExplicitSuccess) return;
-        }
-      }
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Approve UserOp reverted")) {
-        throw error;
-      }
-      // ignore transient fetch/parser errors, just retry
-    } finally {
-      clearTimeout(timeout);
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  throw new Error("Timed out waiting for approve UserOp to be mined.");
 }

@@ -2,38 +2,23 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
+import {
+  estimateKernelUserOperationFeeV07,
+  submitKernelUserOperationV07,
+} from "@/lib/accountAbstraction/submitUserOpV07";
 import type { SupportedChainId } from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
-import { encodeErc20Transfer } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
 import { ButtonSpinner } from "./ButtonSpinner";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
-function formatUnits(value: bigint, decimals: number): string {
-  const negative = value < 0n;
-  const v = negative ? -value : value;
-  const base = 10n ** BigInt(decimals);
-  const int = v / base;
-  const frac = v % base;
-  if (decimals === 0) return `${negative ? "-" : ""}${int.toString()}`;
-  const fracStr = frac.toString().padStart(decimals, "0").replace(/0+$/, "");
-  return `${negative ? "-" : ""}${int.toString()}${fracStr ? `.${fracStr}` : ""}`;
-}
-
-type Asset = {
-  symbol: string;
-  address: Address;
-  decimals: number;
-};
-
-export function TransferOutAction(props: {
+export function NativeTransferOutAction(props: {
   chainId: SupportedChainId;
   chainRpcUrl: string;
   owner: Address;
   kernelAddress: Address;
-  asset: Asset;
+  nativeSymbol: string;
   balance: bigint | null;
   bundlerUrl: string;
   ensureActionReady: () => boolean;
@@ -42,7 +27,20 @@ export function TransferOutAction(props: {
   request: (method: string, params?: unknown[] | object) => Promise<unknown>;
   switchChain: (chainId: number) => Promise<void>;
 }) {
-  const { chainId, chainRpcUrl, owner, kernelAddress, asset, balance, bundlerUrl, ensureActionReady, notify, onSuccess, request, switchChain } = props;
+  const {
+    chainId,
+    chainRpcUrl,
+    owner,
+    kernelAddress,
+    nativeSymbol,
+    balance,
+    bundlerUrl,
+    ensureActionReady,
+    notify,
+    onSuccess,
+    request,
+    switchChain,
+  } = props;
 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,21 +70,9 @@ export function TransferOutAction(props: {
   const hasBalance = balance !== null && balance > 0n;
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-3">
-        <div className="flex-1">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">
-            {asset.symbol}
-          </div>
-          <div className="mt-1 text-lg font-semibold">
-            {balance === null ? (
-              <span className="text-zinc-300">&mdash;</span>
-            ) : (
-              formatUnits(balance, asset.decimals)
-            )}
-          </div>
-        </div>
-        {hasBalance ? (
+    <div className="mt-3 flex flex-col gap-2">
+      {hasBalance ? (
+        <>
           <button
             type="button"
             className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
@@ -102,7 +88,7 @@ export function TransferOutAction(props: {
               if (!bundlerUrl) {
                 notify({
                   title: "ZeroDev configuration required",
-                  description: "Add a ZeroDev Project ID or full bundler RPC URL before transferring funds out.",
+                  description: "Add a ZeroDev Project ID or full bundler RPC URL before transferring native balance out.",
                 });
                 return;
               }
@@ -110,19 +96,40 @@ export function TransferOutAction(props: {
               setIsSubmittingSafe(true);
 
               try {
-                if (!balance || balance <= 0n) throw new Error("No balance to transfer.");
+                if (!balance || balance <= 0n) {
+                  throw new Error(`No ${nativeSymbol} balance to transfer.`);
+                }
 
                 setStatusSafe("Switching network (if needed)...");
                 await switchChain(chainId);
 
-                setStatusSafe("Building transfer call...");
-                const transferCallData = encodeErc20Transfer(owner, balance);
+                setStatusSafe(`Estimating max ${nativeSymbol} transfer after gas…`);
+                const estimationCallData = await encodeKernelExecuteCalls([
+                  {
+                    target: owner,
+                    callData: "0x",
+                    value: 0n,
+                  },
+                ]);
+                const estimatedFee = await estimateKernelUserOperationFeeV07({
+                  bundlerUrl,
+                  chainRpcUrl,
+                  kernelAddress,
+                  kernelCallData: estimationCallData,
+                  request,
+                  onStatus: setStatusSafe,
+                });
+                const transferAmount = balance - estimatedFee;
+                if (transferAmount <= 0n) {
+                  throw new Error(`Not enough ${nativeSymbol} balance to cover the estimated UserOperation fee.`);
+                }
 
+                setStatusSafe(`Building ${nativeSymbol} transfer...`);
                 const kernelCallData = await encodeKernelExecuteCalls([
                   {
-                    target: asset.address,
-                    callData: transferCallData,
-                    value: 0n,
+                    target: owner,
+                    callData: "0x",
+                    value: transferAmount,
                   },
                 ]);
 
@@ -138,17 +145,17 @@ export function TransferOutAction(props: {
                 });
 
                 setLastUserOpHashSafe(sentHash);
-                setStatusSafe("Transfer submitted. Waiting for confirmation…");
+                setStatusSafe(`Transfer submitted. Waiting for ${nativeSymbol} confirmation…`);
                 await waitForUserOpReceipt({
                   bundlerUrl,
                   userOpHash: sentHash,
-                  operationLabel: `${asset.symbol} transfer UserOperation`,
+                  operationLabel: `${nativeSymbol} transfer UserOperation`,
                 });
                 setStatusSafe("Transfer confirmed. Refreshing positions…");
                 await onSuccess?.();
                 setStatusSafe("Transfer confirmed.");
               } catch (e) {
-                setErrorSafe(e instanceof Error ? e.message : "Transfer failed.");
+                setErrorSafe(e instanceof Error ? e.message : `${nativeSymbol} transfer failed.`);
                 setStatusSafe(null);
               } finally {
                 setIsSubmittingSafe(false);
@@ -156,10 +163,13 @@ export function TransferOutAction(props: {
             }}
           >
             {isSubmitting ? <ButtonSpinner /> : null}
-            <span>{isSubmitting ? "Submitting…" : "Transfer all to connected wallet"}</span>
+            <span>{isSubmitting ? "Submitting…" : `Transfer max ${nativeSymbol} to connected wallet`}</span>
           </button>
-        ) : null}
-      </div>
+          <p className="text-xs text-[var(--muted)]">
+            Transfers the full balance minus the estimated UserOperation gas cost at submission time.
+          </p>
+        </>
+      ) : null}
       {status ? <p className="text-xs text-zinc-500">{status}</p> : null}
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
       {lastUserOpHash ? (

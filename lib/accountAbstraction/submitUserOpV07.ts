@@ -219,6 +219,124 @@ async function signUserOperationHash(parameters: {
   throw new Error("Failed to sign UserOperation hash.");
 }
 
+export async function estimateKernelUserOperationFeeV07(parameters: {
+  bundlerUrl: string;
+  chainRpcUrl: string;
+  kernelAddress: Address;
+  kernelCallData: Hex;
+  request: RpcRequest;
+  onStatus?: ((status: string) => void) | undefined;
+}): Promise<bigint> {
+  const { bundlerUrl, chainRpcUrl, kernelAddress, kernelCallData, request, onStatus } = parameters;
+
+  onStatus?.("Checking loan wallet deployment…");
+  const kernelCode = (await request("eth_getCode", [kernelAddress, "latest"])) as Hex;
+  if (kernelCode === "0x") {
+    throw new Error("Kernel wallet is not deployed on this chain.");
+  }
+
+  onStatus?.("Reading Kernel nonce…");
+  const kernelNonceKey = encodeKernelV07NonceKey(ECDSA_VALIDATOR_ADDRESS);
+  let nonce = await readKernelNonce({
+    chainRpcUrl,
+    request,
+    kernelAddress,
+    nonceKey: kernelNonceKey,
+  });
+
+  onStatus?.("Reading UserOperation gas price…");
+  const bundlerGas = await getBundlerUserOpGasPrice(bundlerUrl);
+
+  let maxFeePerGas: bigint;
+  let maxPriorityFeePerGas: bigint;
+  if (bundlerGas) {
+    maxFeePerGas = bundlerGas.maxFeePerGas;
+    maxPriorityFeePerGas = bundlerGas.maxPriorityFeePerGas;
+  } else {
+    const gasPriceHex = await jsonRpcFetch<Hex>(chainRpcUrl, "eth_gasPrice");
+    maxFeePerGas = parseHexQuantity(gasPriceHex, "gasPrice");
+    maxPriorityFeePerGas = 0n;
+    try {
+      const tipHex = await jsonRpcFetch<Hex>(chainRpcUrl, "eth_maxPriorityFeePerGas");
+      maxPriorityFeePerGas = parseHexQuantity(tipHex, "maxPriorityFeePerGas");
+    } catch {
+      maxPriorityFeePerGas = maxFeePerGas;
+    }
+    if (maxFeePerGas < maxPriorityFeePerGas) maxFeePerGas = maxPriorityFeePerGas;
+    maxFeePerGas = (maxFeePerGas * 120n) / 100n;
+  }
+
+  const buildOpBase = (nonceValue: bigint): UserOperationV07 => ({
+    sender: kernelAddress,
+    nonce: nonceValue,
+    callData: kernelCallData,
+    callGasLimit: 0n,
+    verificationGasLimit: 0n,
+    preVerificationGas: 0n,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
+    signature: DUMMY_ECDSA_SIG,
+  });
+
+  const toRpcOp = (op: UserOperationV07) => ({
+    sender: op.sender,
+    nonce: toHexQuantity(op.nonce),
+    callData: op.callData,
+    callGasLimit: toHexQuantity(op.callGasLimit),
+    verificationGasLimit: toHexQuantity(op.verificationGasLimit),
+    preVerificationGas: toHexQuantity(op.preVerificationGas),
+    maxFeePerGas: toHexQuantity(op.maxFeePerGas),
+    maxPriorityFeePerGas: toHexQuantity(op.maxPriorityFeePerGas),
+    signature: op.signature,
+  });
+
+  const estimateWithNonceRetry = async (
+    baseOp: UserOperationV07,
+  ): Promise<{ baseOp: UserOperationV07; estimate: EstimateGasResult }> => {
+    try {
+      const estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
+        toRpcOp(baseOp),
+        ENTRYPOINT_V07_ADDRESS,
+      ]);
+      return { baseOp, estimate };
+    } catch (error) {
+      if (!isInvalidAccountNonceError(error)) throw error;
+
+      onStatus?.("Refreshing nonce and retrying estimate…");
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+      nonce = await readKernelNonce({
+        chainRpcUrl,
+        request,
+        kernelAddress,
+        nonceKey: kernelNonceKey,
+      });
+      const retriedBaseOp = buildOpBase(nonce);
+      const estimate = await jsonRpcFetch<EstimateGasResult>(bundlerUrl, "eth_estimateUserOperationGas", [
+        toRpcOp(retriedBaseOp),
+        ENTRYPOINT_V07_ADDRESS,
+      ]);
+      return { baseOp: retriedBaseOp, estimate };
+    }
+  };
+
+  onStatus?.("Estimating UserOperation gas…");
+  const initialEstimate = await estimateWithNonceRetry(buildOpBase(nonce));
+  const rawCallGas = parseHexQuantity(initialEstimate.estimate.callGasLimit, "callGasLimit");
+  const rawVerificationGas = parseHexQuantity(initialEstimate.estimate.verificationGasLimit, "verificationGasLimit");
+  const rawPreVerificationGas = parseHexQuantity(initialEstimate.estimate.preVerificationGas, "preVerificationGas");
+
+  const addBuffer = (value: bigint): bigint => (value * 150n) / 100n;
+  const callGasLimit = addBuffer(rawCallGas) > 0n ? addBuffer(rawCallGas) : FALLBACK_CALL_GAS_LIMIT;
+  const verificationGasLimit = addBuffer(rawVerificationGas) > 0n
+    ? addBuffer(rawVerificationGas)
+    : FALLBACK_VERIFICATION_GAS_LIMIT;
+  const preVerificationGas = addBuffer(rawPreVerificationGas) > 0n
+    ? addBuffer(rawPreVerificationGas)
+    : FALLBACK_PRE_VERIFICATION_GAS;
+
+  return (callGasLimit + verificationGasLimit + preVerificationGas) * maxFeePerGas;
+}
+
 export async function submitKernelUserOperationV07(parameters: {
   bundlerUrl: string;
   chainRpcUrl: string;

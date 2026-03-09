@@ -4,7 +4,7 @@ import { providers } from "ethers";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
-import { getChainConfig, type SupportedChainId } from "@/lib/chains";
+import type { SupportedChainId } from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 import {
@@ -12,6 +12,9 @@ import {
   buildMorphoWithdrawTxsWithBackendLogic,
   type MorphoParityMarketConfig,
 } from "@/lib/protocols/morphoBackendParity";
+
+import { ButtonSpinner } from "./ButtonSpinner";
+import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 type MorphoAction = "withdraw" | "repay";
 
 function parseUnits(value: string, decimals: number): bigint {
@@ -31,19 +34,38 @@ type Asset = {
 
 export function MorphoRescueActions(props: {
   chainId: SupportedChainId;
+  chainRpcUrl: string;
   owner: Address;
   kernelAddress: Address;
   market: MorphoParityMarketConfig;
   collateralAsset: Asset;
   loanAsset: Asset;
   bundlerUrl: string;
+  ensureActionReady: () => boolean;
   getProvider: () => Promise<{
     request: (args: { method: string; params?: unknown[] | object }) => Promise<unknown>;
   }>;
+  notify: (toast: { title: string; description?: string; tone?: "error" | "info" }) => void;
+  onSuccess?: (() => Promise<void> | void) | undefined;
   request: (method: string, params?: unknown[] | object) => Promise<unknown>;
   switchChain: (chainId: number) => Promise<void>;
 }) {
-  const { chainId, owner, kernelAddress, market, collateralAsset, loanAsset, bundlerUrl, getProvider, request, switchChain } = props;
+  const {
+    chainId,
+    chainRpcUrl,
+    owner,
+    kernelAddress,
+    market,
+    collateralAsset,
+    loanAsset,
+    bundlerUrl,
+    ensureActionReady,
+    getProvider,
+    notify,
+    onSuccess,
+    request,
+    switchChain,
+  } = props;
   const [action, setAction] = useState<MorphoAction>("withdraw");
   const [useMax, setUseMax] = useState(true);
   const [amountInput, setAmountInput] = useState("0");
@@ -102,6 +124,12 @@ export function MorphoRescueActions(props: {
           Withdraw collateral or repay debt on your ZeroDev Kernel wallet via Morpho Blue.
         </p>
 
+        {action === "withdraw" ? (
+          <p className="rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs text-[var(--muted)]">
+            Withdraw returns collateral to the <strong>loan wallet</strong>. Use <strong>Transfer out</strong> afterward to move it to your connected wallet.
+          </p>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2">
             <span className="text-sm">Action</span>
@@ -145,18 +173,29 @@ export function MorphoRescueActions(props: {
 
         <button
           type="button"
-          className="inline-flex h-11 w-fit items-center justify-center rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
-          disabled={!bundlerUrl || amountForProtocol === null || isSubmitting}
+          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+          disabled={isSubmitting}
           onClick={async () => {
             if (isSubmitting) return;
-            setIsSubmittingSafe(true);
+
             setErrorSafe(null);
             setStatusSafe(null);
             setLastUserOpHashSafe(null);
 
-            try {
-              if (amountForProtocol === null) throw new Error("Invalid amount.");
+            if (!ensureActionReady()) return;
+            if (amountForProtocol === null) {
+              const message = `Enter a valid ${action === "withdraw" ? collateralAsset.symbol : loanAsset.symbol} amount before continuing.`;
+              notify({
+                title: "Enter a valid amount",
+                description: message,
+              });
+              setErrorSafe(message);
+              return;
+            }
 
+            setIsSubmittingSafe(true);
+
+            try {
               setStatusSafe("Switching network (if needed)…");
               await switchChain(chainId);
 
@@ -188,11 +227,9 @@ export function MorphoRescueActions(props: {
                 })),
               );
 
-              const chainConfig = getChainConfig(chainId);
-              if (!chainConfig) throw new Error(`Unsupported chain ${chainId}`);
               const sentHash = await submitKernelUserOperationV07({
                 bundlerUrl,
-                chainRpcUrl: chainConfig.rpcUrl,
+                chainRpcUrl,
                 owner,
                 kernelAddress,
                 chainId,
@@ -202,7 +239,15 @@ export function MorphoRescueActions(props: {
               });
 
               setLastUserOpHashSafe(sentHash);
-              setStatusSafe("Submitted.");
+              setStatusSafe("Submitted. Waiting for confirmation…");
+              await waitForUserOpReceipt({
+                bundlerUrl,
+                userOpHash: sentHash,
+                operationLabel: `Morpho ${action} UserOperation`,
+              });
+              setStatusSafe("Confirmed. Refreshing positions…");
+              await onSuccess?.();
+              setStatusSafe("Confirmed.");
             } catch (e) {
               setErrorSafe(e instanceof Error ? e.message : "Rescue action failed.");
               setStatusSafe(null);
@@ -211,7 +256,8 @@ export function MorphoRescueActions(props: {
             }
           }}
         >
-          {isSubmitting ? "Submitting…" : "Execute Morpho action via Kernel"}
+          {isSubmitting ? <ButtonSpinner /> : null}
+          <span>{isSubmitting ? "Submitting…" : "Execute Morpho action via Kernel"}</span>
         </button>
 
         {action === "repay" && useMax ? (

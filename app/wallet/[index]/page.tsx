@@ -14,6 +14,7 @@ import {
   decodeAaveGetUserAccountData,
   encodeAaveGetReserveTokensAddresses,
   encodeAaveGetUserAccountData,
+  MAX_UINT256,
 } from "@/lib/protocols/aave";
 import { decodeErc20BalanceOf, encodeErc20BalanceOf } from "@/lib/protocols/erc20";
 import {
@@ -25,8 +26,11 @@ import { MORPHO_BASE_MARKETS } from "@/lib/protocols/morphoMarkets";
 
 import { buildZeroDevBundlerUrl } from "@/lib/zerodev/bundlerUrl";
 
+import { ActionToastViewport, type ActionToast } from "./_components/ActionToastViewport";
 import { AaveRescueActions } from "./_components/AaveRescueActions";
+import { ButtonSpinner } from "./_components/ButtonSpinner";
 import { MorphoRescueActions } from "./_components/MorphoRescueActions";
+import { NativeTransferOutAction } from "./_components/NativeTransferOutAction";
 import { TransferOutAction } from "./_components/TransferOutAction";
 
 import { useWallet } from "../../providers";
@@ -47,6 +51,85 @@ function shortAddress(addr: Address) {
 }
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const INFINITE_HEALTH_FACTOR_THRESHOLD = 999;
+
+function formatRoundedNumber(value: number, maximumFractionDigits: number): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits,
+  }).format(value);
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function resolveChainRpcUrl(
+  chainId: SupportedChainId,
+  customRpcUrls: Partial<Record<SupportedChainId, string>>,
+): string {
+  const chain = getChainConfig(chainId);
+  if (!chain) return "";
+
+  const override = customRpcUrls[chainId]?.trim();
+  return override && isValidHttpUrl(override) ? override : chain.rpcUrl;
+}
+
+function getRpcInputPlaceholder(chainId: SupportedChainId): string {
+  switch (chainId) {
+    case 1:
+      return "https://eth-mainnet.g.alchemy.com/v2/your-key";
+    case 8453:
+      return "https://base-mainnet.g.alchemy.com/v2/your-key";
+    case 42161:
+      return "https://arb-mainnet.g.alchemy.com/v2/your-key";
+    case 56:
+      return "https://bnb-mainnet.g.alchemy.com/v2/your-key";
+    default:
+      return "https://your-rpc-provider.example";
+  }
+}
+
+function normalizeHealthFactor(value: string | bigint | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "bigint") {
+    if (value === MAX_UINT256) return Number.POSITIVE_INFINITY;
+    return Number(formatUnits(value, 18));
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d+$/.test(trimmed) && trimmed.length >= 18) {
+    const raw = BigInt(trimmed);
+    if (raw === MAX_UINT256) return Number.POSITIVE_INFINITY;
+    return Number(formatUnits(raw, 18));
+  }
+
+  const numeric = Number(trimmed);
+  if (!Number.isFinite(numeric)) return null;
+  if (numeric >= INFINITE_HEALTH_FACTOR_THRESHOLD) return Number.POSITIVE_INFINITY;
+  return numeric;
+}
+
+function formatHealthFactor(value: string | bigint | null | undefined): string {
+  const normalized = normalizeHealthFactor(value);
+  if (normalized === null) return "—";
+  if (!Number.isFinite(normalized)) return "∞";
+  return formatRoundedNumber(normalized, normalized >= 10 ? 2 : 3);
+}
+
+function getHealthFactorTone(value: string | bigint | null | undefined): string {
+  const normalized = normalizeHealthFactor(value);
+  if (normalized === null || normalized > 2) return "bg-zinc-900 text-white";
+  if (normalized > 1.2) return "bg-zinc-200 text-zinc-900";
+  return "bg-red-500/10 text-red-700";
+}
 
 export default function WalletDetailPage() {
   const {
@@ -94,13 +177,26 @@ export default function WalletDetailPage() {
   const [isCopying, setIsCopying] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [zerodevInput, setZerodevInput] = useState("");
+  const [customRpcUrls, setCustomRpcUrls] = useState<Partial<Record<SupportedChainId, string>>>({});
+  const [toasts, setToasts] = useState<ActionToast[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshRequestIdRef = useRef(0);
   const manualChainSelectionRef = useRef(false);
   const selectedChainIdRef = useRef<SupportedChainId>(selectedChainId);
   const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const zeroDevInputRef = useRef<HTMLInputElement | null>(null);
+  const rpcInputRef = useRef<HTMLInputElement | null>(null);
+  const toastIdRef = useRef(0);
+  const toastTimeoutsRef = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
-  const chain = useMemo(() => getChainConfig(selectedChainId), [selectedChainId]);
+  const chain = useMemo(() => {
+    const selectedChain = getChainConfig(selectedChainId);
+    if (!selectedChain) return null;
+    return {
+      ...selectedChain,
+      rpcUrl: resolveChainRpcUrl(selectedChainId, customRpcUrls),
+    };
+  }, [customRpcUrls, selectedChainId]);
 
   const kernelAddress = useMemo(() => {
     if (!owner) return null;
@@ -109,14 +205,51 @@ export default function WalletDetailPage() {
   }, [indexBigInt, owner]);
 
   const assets = useMemo(() => CHAIN_ASSETS[selectedChainId], [selectedChainId]);
+  const zeroDevInputTrimmed = zerodevInput.trim();
+  const selectedRpcInput = customRpcUrls[selectedChainId] ?? "";
+  const selectedRpcError = useMemo(() => {
+    const trimmed = selectedRpcInput.trim();
+    if (!trimmed) return null;
+    return isValidHttpUrl(trimmed) ? null : "Enter a valid http(s) RPC URL.";
+  }, [selectedRpcInput]);
+  const zeroDevValidationError = useMemo(() => {
+    if (!zeroDevInputTrimmed) return null;
+    try {
+      buildZeroDevBundlerUrl(zeroDevInputTrimmed, selectedChainId);
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : "Invalid ZeroDev Project ID or RPC URL.";
+    }
+  }, [selectedChainId, zeroDevInputTrimmed]);
+  const hasNoGas = nativeBalance !== null && nativeBalance === 0n;
+  const aaveHealthFactor = aaveSummary?.healthFactor ?? aaveAccountData?.healthFactor ?? null;
+  const morphoHealthFactor = morphoSummary?.healthFactor ?? null;
+  const readinessIssues = useMemo(() => {
+    const issues: string[] = [];
+
+    if (!zeroDevInputTrimmed) {
+      issues.push("Add a ZeroDev Project ID or full ZeroDev RPC URL.");
+    } else if (zeroDevValidationError) {
+      issues.push("Fix the ZeroDev Project ID / RPC URL before submitting actions.");
+    }
+
+    if (!selectedRpcInput.trim()) {
+      issues.push(`Add a ${chain?.name ?? "chain"} RPC URL.`);
+    } else if (selectedRpcError) {
+      issues.push("Fix the chain RPC URL before submitting actions.");
+    }
+
+    if (hasNoGas) {
+      issues.push(`Fund the loan wallet with ${chain?.nativeSymbol ?? "native token"} gas.`);
+    }
+
+    return issues;
+  }, [chain?.name, chain?.nativeSymbol, hasNoGas, selectedRpcError, selectedRpcInput, zeroDevInputTrimmed, zeroDevValidationError]);
 
   const bundlerUrl = useMemo(() => {
-    try {
-      return buildZeroDevBundlerUrl(zerodevInput, selectedChainId);
-    } catch {
-      return "";
-    }
-  }, [zerodevInput, selectedChainId]);
+    if (!zeroDevInputTrimmed || zeroDevValidationError) return "";
+    return buildZeroDevBundlerUrl(zeroDevInputTrimmed, selectedChainId);
+  }, [selectedChainId, zeroDevInputTrimmed, zeroDevValidationError]);
 
   // Auto-detect which chain has the kernel deployed and select it
   useEffect(() => {
@@ -127,7 +260,7 @@ export default function WalletDetailPage() {
     (async () => {
       const checks = SUPPORTED_CHAINS.map(async (c) => {
         try {
-          const res = await fetch(c.rpcUrl, {
+          const res = await fetch(resolveChainRpcUrl(c.id, customRpcUrls), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -156,7 +289,7 @@ export default function WalletDetailPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [kernelAddress]);
+  }, [customRpcUrls, kernelAddress]);
 
   useEffect(() => {
     manualChainSelectionRef.current = false;
@@ -189,12 +322,92 @@ export default function WalletDetailPage() {
   }, [connectedChainId, owner, selectedChainId, switchChain]);
 
   useEffect(() => {
+    const toastTimeouts = toastTimeoutsRef.current;
     return () => {
       if (copyResetTimeoutRef.current !== null) {
         clearTimeout(copyResetTimeoutRef.current);
       }
+      for (const timeout of toastTimeouts.values()) {
+        clearTimeout(timeout);
+      }
+      toastTimeouts.clear();
     };
   }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    const timeout = toastTimeoutsRef.current.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      toastTimeoutsRef.current.delete(id);
+    }
+
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const notifyToast = useCallback((toast: Omit<ActionToast, "id">) => {
+    const id = ++toastIdRef.current;
+    const nextToast: ActionToast = {
+      tone: "error",
+      ...toast,
+      id,
+    };
+
+    setToasts((current) => [...current.slice(-2), nextToast]);
+
+    const timeout = setTimeout(() => {
+      toastTimeoutsRef.current.delete(id);
+      setToasts((current) => current.filter((toastItem) => toastItem.id !== id));
+    }, 4500);
+    toastTimeoutsRef.current.set(id, timeout);
+  }, []);
+
+  const ensureActionReady = useCallback(() => {
+    if (!zeroDevInputTrimmed) {
+      notifyToast({
+        title: "ZeroDev Project ID required",
+        description: "Paste a ZeroDev Project ID or full bundler RPC URL before executing rescue actions.",
+      });
+      zeroDevInputRef.current?.focus();
+      return false;
+    }
+
+    if (zeroDevValidationError) {
+      notifyToast({
+        title: "Fix your ZeroDev configuration",
+        description: zeroDevValidationError,
+      });
+      zeroDevInputRef.current?.focus();
+      return false;
+    }
+
+    if (!selectedRpcInput.trim()) {
+      notifyToast({
+        title: `${chain?.name ?? "Chain"} RPC URL required`,
+        description: "Paste a custom RPC URL from Alchemy, QuickNode, or your own node before executing rescue actions.",
+      });
+      rpcInputRef.current?.focus();
+      return false;
+    }
+
+    if (selectedRpcError) {
+      notifyToast({
+        title: "Fix your RPC URL",
+        description: selectedRpcError,
+      });
+      rpcInputRef.current?.focus();
+      return false;
+    }
+
+    if (hasNoGas) {
+      notifyToast({
+        title: `Fund the loan wallet with ${chain?.nativeSymbol ?? "native token"}`,
+        description: `User operations need gas. Send ${chain?.nativeSymbol ?? "native token"} to the loan wallet address above, then try again.`,
+      });
+      return false;
+    }
+
+    return true;
+  }, [chain?.name, chain?.nativeSymbol, hasNoGas, notifyToast, selectedRpcError, selectedRpcInput, zeroDevInputTrimmed, zeroDevValidationError]);
 
   const copyAddress = useCallback(() => {
     if (!kernelAddress || isCopying) return;
@@ -243,7 +456,13 @@ export default function WalletDetailPage() {
     }
     const requestId = ++refreshRequestIdRef.current;
     const refreshChainId = selectedChainId;
-    const refreshChain = getChainConfig(refreshChainId);
+    const refreshChainBase = getChainConfig(refreshChainId);
+    const refreshChain = refreshChainBase
+      ? {
+          ...refreshChainBase,
+          rpcUrl: resolveChainRpcUrl(refreshChainId, customRpcUrls),
+        }
+      : null;
     const refreshAssets = CHAIN_ASSETS[refreshChainId];
     if (!refreshChain) {
       setError("Unsupported chain.");
@@ -393,6 +612,8 @@ export default function WalletDetailPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-5 py-8 sm:px-7 sm:py-10">
+      <ActionToastViewport toasts={toasts} onDismiss={dismissToast} />
+
       {/* Page header with breadcrumb */}
       <header className="flex flex-col gap-3">
         <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -442,7 +663,10 @@ export default function WalletDetailPage() {
                       disabled={isCopying}
                       onClick={copyAddress}
                     >
-                      {copied ? "Copied!" : isCopying ? "Copying..." : "Copy address"}
+                      <span className="inline-flex items-center gap-2">
+                        {isCopying ? <ButtonSpinner /> : null}
+                        <span>{copied ? "Copied!" : isCopying ? "Copying..." : "Copy address"}</span>
+                      </span>
                     </button>
                   </div>
                   <div className="mt-1.5">
@@ -493,11 +717,12 @@ export default function WalletDetailPage() {
 
                 <button
                   type="button"
-                  className="inline-flex h-9 items-center rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700"
+                  className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700"
                   disabled={isRefreshing}
                   onClick={refresh}
                 >
-                  {isRefreshing ? "Loading…" : "Load positions"}
+                  {isRefreshing ? <ButtonSpinner /> : null}
+                  <span>{isRefreshing ? "Loading…" : "Load positions"}</span>
                 </button>
                 </div>
               </div>
@@ -513,30 +738,96 @@ export default function WalletDetailPage() {
 
           {/* ZeroDev bundler config (page-level, shared) */}
           <section className="rounded-2xl border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_1px_0_rgba(15,15,15,0.04)]">
-            <label className="flex flex-col gap-2">
-              <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
-                ZeroDev Project ID or RPC URL
-              </span>
-              <input
-                className="h-11 rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 text-sm outline-none focus:border-zinc-900 focus:bg-white"
-                value={zerodevInput}
-                onChange={(e) => setZerodevInput(e.target.value)}
-                placeholder="paste project ID or full RPC URL"
-              />
-              <span className="text-xs text-[var(--muted)]">
-                Go to{" "}
-                <a
-                  href="https://dashboard.zerodev.app/projects/general"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-zinc-900 underline underline-offset-2"
-                >
-                  dashboard.zerodev.app
-                </a>
-                {" "}&rarr; sign in, open your project (or create one), then copy the <strong>Project ID</strong> from the top-right.
-                This is shared across all rescue actions below.
-              </span>
-            </label>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
+                  ZeroDev Project ID or RPC URL
+                </span>
+                <input
+                  ref={zeroDevInputRef}
+                  className={`h-11 rounded-lg border px-3 text-sm outline-none focus:bg-white ${
+                    zeroDevValidationError
+                      ? "border-red-300 bg-red-50 focus:border-red-500"
+                      : "border-[var(--line)] bg-[var(--panel-subtle)] focus:border-zinc-900"
+                  }`}
+                  value={zerodevInput}
+                  onChange={(e) => setZerodevInput(e.target.value)}
+                  placeholder="paste project ID or full RPC URL"
+                />
+                {zeroDevValidationError ? (
+                  <span className="text-xs text-red-600">{zeroDevValidationError}</span>
+                ) : zeroDevInputTrimmed ? (
+                  <span className="text-xs text-emerald-700">
+                    ZeroDev bundler is ready for {chain?.name ?? "this chain"}.
+                  </span>
+                ) : (
+                  <span className="text-xs text-[var(--muted)]">
+                    Required before any rescue action can be submitted.
+                  </span>
+                )}
+                <span className="text-xs text-[var(--muted)]">
+                  Go to{" "}
+                  <a
+                    href="https://dashboard.zerodev.app/projects/general"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-zinc-900 underline underline-offset-2"
+                  >
+                    dashboard.zerodev.app
+                  </a>
+                  {" "}&rarr; sign in, open your project (or create one), then copy the <strong>Project ID</strong> from the top-right.
+                  This is shared across all rescue actions below.
+                </span>
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
+                  {chain?.name ?? "Selected chain"} RPC URL
+                </span>
+                <input
+                  ref={rpcInputRef}
+                  className={`h-11 rounded-lg border px-3 text-sm outline-none focus:bg-white ${
+                    selectedRpcError
+                      ? "border-red-300 bg-red-50 focus:border-red-500"
+                      : "border-[var(--line)] bg-[var(--panel-subtle)] focus:border-zinc-900"
+                  }`}
+                  value={selectedRpcInput}
+                  onChange={(e) =>
+                    setCustomRpcUrls((current) => ({
+                      ...current,
+                      [selectedChainId]: e.target.value,
+                    }))
+                  }
+                  placeholder={getRpcInputPlaceholder(selectedChainId)}
+                />
+                {selectedRpcError ? (
+                  <span className="text-xs text-red-600">
+                    {selectedRpcError} Rescue actions will stay blocked until this is fixed.
+                  </span>
+                ) : selectedRpcInput.trim() ? (
+                  <span className="text-xs text-emerald-700">
+                    Custom RPC is ready for {chain?.name ?? "this chain"}.
+                  </span>
+                ) : (
+                  <span className="text-xs text-[var(--muted)]">
+                    Required before any rescue action can be submitted.
+                  </span>
+                )}
+                <span className="text-xs text-[var(--muted)]">
+                  Go to{" "}
+                  <a
+                    href="https://www.alchemy.com/dashboard"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-zinc-900 underline underline-offset-2"
+                  >
+                    Alchemy Dashboard
+                  </a>
+                  {" "}&rarr; sign in, open <strong>Apps</strong>, create a new app (or open an existing one),
+                  choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here.
+                </span>
+              </label>
+            </div>
           </section>
 
           {/* Rescue flow steps */}
@@ -554,6 +845,24 @@ export default function WalletDetailPage() {
               4. Transfer out
             </span>
           </nav>
+
+          {readinessIssues.length > 0 ? (
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-950">
+                Rescue actions will prompt until these are fixed.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {readinessIssues.map((issue) => (
+                  <span
+                    key={issue}
+                    className="rounded-full border border-amber-300 bg-white/80 px-3 py-1 text-xs font-medium text-amber-900"
+                  >
+                    {issue}
+                  </span>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {/* Wallet balances */}
           <section>
@@ -577,6 +886,22 @@ export default function WalletDetailPage() {
                     No gas &mdash; send {chain?.nativeSymbol ?? "native token"} to the loan wallet address above.
                   </p>
                 ) : null}
+                {nativeBalance !== null && nativeBalance > 0n ? (
+                  <NativeTransferOutAction
+                    chainId={selectedChainId}
+                    chainRpcUrl={chain?.rpcUrl ?? ""}
+                    owner={owner}
+                    kernelAddress={kernelAddress}
+                    nativeSymbol={chain?.nativeSymbol ?? "ETH"}
+                    balance={nativeBalance}
+                    bundlerUrl={bundlerUrl}
+                    ensureActionReady={ensureActionReady}
+                    notify={notifyToast}
+                    onSuccess={refresh}
+                    request={request}
+                    switchChain={switchChain}
+                  />
+                ) : null}
               </div>
               <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
                 <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">{assets.usdc.symbol}</div>
@@ -591,11 +916,15 @@ export default function WalletDetailPage() {
               <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
                 <TransferOutAction
                   chainId={selectedChainId}
+                  chainRpcUrl={chain?.rpcUrl ?? ""}
                   owner={owner}
                   kernelAddress={kernelAddress}
                   asset={assets.btcCollateral}
                   balance={btcBalance}
                   bundlerUrl={bundlerUrl}
+                  ensureActionReady={ensureActionReady}
+                  notify={notifyToast}
+                  onSuccess={refresh}
                   request={request}
                   switchChain={switchChain}
                 />
@@ -609,15 +938,9 @@ export default function WalletDetailPage() {
               <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                 Aave V3 — Loan details (debt asset: {assets.usdc.symbol})
               </h2>
-              {aaveSummary?.healthFactor ? (
-                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                  Number(aaveSummary.healthFactor) > 2
-                    ? "bg-zinc-900 text-white"
-                    : Number(aaveSummary.healthFactor) > 1.2
-                      ? "bg-zinc-200 text-zinc-900"
-                      : "bg-red-500/10 text-red-700"
-                }`}>
-                  HF: {aaveSummary.healthFactor}
+              {aaveHealthFactor !== null ? (
+                <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getHealthFactorTone(aaveHealthFactor)}`}>
+                  HF: {formatHealthFactor(aaveHealthFactor)}
                 </span>
               ) : null}
             </div>
@@ -651,8 +974,7 @@ export default function WalletDetailPage() {
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                   <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Health factor</div>
                   <div className="mt-1 text-base font-semibold">
-                    {aaveSummary?.healthFactor ??
-                      (aaveAccountData ? formatUnits(aaveAccountData.healthFactor, 18) : "—")}
+                    {formatHealthFactor(aaveHealthFactor)}
                   </div>
                 </div>
                 <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
@@ -671,11 +993,15 @@ export default function WalletDetailPage() {
             {chain?.aaveV3PoolAddress ? (
               <AaveRescueActions
                 chainId={selectedChainId}
+                chainRpcUrl={chain?.rpcUrl ?? ""}
                 owner={owner}
                 kernelAddress={kernelAddress}
                 collateralAsset={assets.btcCollateral}
                 repayAsset={assets.usdc}
                 bundlerUrl={bundlerUrl}
+                ensureActionReady={ensureActionReady}
+                notify={notifyToast}
+                onSuccess={refresh}
                 request={request}
                 switchChain={switchChain}
               />
@@ -689,15 +1015,9 @@ export default function WalletDetailPage() {
                 <h2 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                   Morpho Blue — Loan details (debt asset: {assets.usdc.symbol})
                 </h2>
-                {morphoSummary?.healthFactor ? (
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    Number(morphoSummary.healthFactor) > 2
-                      ? "bg-zinc-900 text-white"
-                      : Number(morphoSummary.healthFactor) > 1.2
-                        ? "bg-zinc-200 text-zinc-900"
-                        : "bg-red-500/10 text-red-700"
-                  }`}>
-                    HF: {morphoSummary.healthFactor}
+                {morphoHealthFactor !== null ? (
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getHealthFactorTone(morphoHealthFactor)}`}>
+                    HF: {formatHealthFactor(morphoHealthFactor)}
                   </span>
                 ) : null}
               </div>
@@ -743,7 +1063,7 @@ export default function WalletDetailPage() {
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Health factor</div>
-                    <div className="mt-1 text-base font-semibold">{morphoSummary?.healthFactor ?? "—"}</div>
+                    <div className="mt-1 text-base font-semibold">{formatHealthFactor(morphoHealthFactor)}</div>
                   </div>
                   <div className="rounded-xl border border-[var(--line)] bg-[var(--panel-subtle)] p-3">
                     <div className="text-[11px] font-medium uppercase tracking-wider text-zinc-400">Liquidation price</div>
@@ -757,13 +1077,17 @@ export default function WalletDetailPage() {
               {chain?.morphoBlueAddress ? (
                 <MorphoRescueActions
                   chainId={selectedChainId}
+                  chainRpcUrl={chain?.rpcUrl ?? ""}
                   owner={owner}
                   kernelAddress={kernelAddress}
                   market={MORPHO_BASE_CBBTC_USDC_MARKET}
                   collateralAsset={assets.btcCollateral}
                   loanAsset={assets.usdc}
                   bundlerUrl={bundlerUrl}
+                  ensureActionReady={ensureActionReady}
                   getProvider={getProvider}
+                  notify={notifyToast}
+                  onSuccess={refresh}
                   request={request}
                   switchChain={switchChain}
                 />
