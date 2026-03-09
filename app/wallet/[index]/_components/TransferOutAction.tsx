@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { submitKernelUserOperationV07 } from "@/lib/accountAbstraction/submitUserOpV07";
 import type { SupportedChainId } from "@/lib/chains";
@@ -8,7 +8,7 @@ import type { Address, Hex } from "@/lib/eth/types";
 import { encodeErc20Transfer } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
-import { ButtonSpinner } from "./ButtonSpinner";
+import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 function formatUnits(value: bigint, decimals: number): string {
@@ -70,6 +70,17 @@ export function TransferOutAction(props: {
   };
 
   const hasBalance = balance !== null && balance > 0n;
+  const buttonLabel = useMemo(() => {
+    if (!isSubmitting) return "Transfer all to connected wallet";
+
+    return getPendingButtonLabel(status, {
+      preparing: "Preparing transfer…",
+      waitingForWallet: "Confirm transfer in wallet…",
+      submitting: "Submitting transfer…",
+      confirming: "Confirming transfer…",
+      refreshing: "Refreshing positions…",
+    });
+  }, [isSubmitting, status]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -89,7 +100,8 @@ export function TransferOutAction(props: {
         {hasBalance ? (
           <button
             type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-50"
+            aria-busy={isSubmitting}
             disabled={isSubmitting}
             onClick={async () => {
               if (isSubmitting) return;
@@ -156,7 +168,7 @@ export function TransferOutAction(props: {
             }}
           >
             {isSubmitting ? <ButtonSpinner /> : null}
-            <span>{isSubmitting ? "Submitting…" : "Transfer all to connected wallet"}</span>
+            <span>{buttonLabel}</span>
           </button>
         ) : null}
       </div>

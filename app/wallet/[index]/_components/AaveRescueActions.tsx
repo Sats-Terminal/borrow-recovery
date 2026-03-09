@@ -10,7 +10,7 @@ import { encodeAaveRepay, encodeAaveWithdraw, MAX_UINT256 } from "@/lib/protocol
 import { encodeErc20Approve } from "@/lib/protocols/erc20";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
-import { ButtonSpinner } from "./ButtonSpinner";
+import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 type ProtocolAction = "withdraw" | "repay";
@@ -102,6 +102,47 @@ export function AaveRescueActions(props: {
       return null;
     }
   }, [amountInput, selectedAsset.decimals, useMax]);
+
+  const buttonLabel = useMemo(() => {
+    if (!isSubmitting) return "Execute Aave action via Kernel";
+
+    const normalizedStatus = status?.toLowerCase() ?? "";
+    const isRepaySecondStep =
+      action === "repay" &&
+      (
+        normalizedStatus.includes("step 2/2") ||
+        normalizedStatus.includes("repay submitted") ||
+        normalizedStatus.includes("repay confirmed")
+      );
+
+    if (action === "withdraw") {
+      return getPendingButtonLabel(status, {
+        preparing: "Preparing withdraw…",
+        waitingForWallet: "Confirm withdraw in wallet…",
+        submitting: "Submitting withdraw…",
+        confirming: "Confirming withdraw…",
+        refreshing: "Refreshing positions…",
+      });
+    }
+
+    if (isRepaySecondStep) {
+      return getPendingButtonLabel(status, {
+        preparing: "Preparing repay…",
+        waitingForWallet: "Confirm repay in wallet…",
+        submitting: "Submitting repay…",
+        confirming: "Confirming repay…",
+        refreshing: "Refreshing positions…",
+      });
+    }
+
+    return getPendingButtonLabel(status, {
+      preparing: `Preparing ${repayAsset.symbol} approval…`,
+      waitingForWallet: `Approve ${repayAsset.symbol} in wallet…`,
+      submitting: "Submitting approval…",
+      confirming: "Confirming approval…",
+      refreshing: "Refreshing positions…",
+    });
+  }, [action, isSubmitting, repayAsset.symbol, status]);
 
   const executeAction = async () => {
     if (isSubmitting) return;
@@ -326,12 +367,13 @@ export function AaveRescueActions(props: {
 
         <button
           type="button"
-          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-50"
+          aria-busy={isSubmitting}
           disabled={isSubmitting}
           onClick={executeAction}
         >
           {isSubmitting ? <ButtonSpinner /> : null}
-          <span>{isSubmitting ? "Submitting…" : "Execute Aave action via Kernel"}</span>
+          <span>{buttonLabel}</span>
         </button>
 
         {action === "repay" && useMax ? (

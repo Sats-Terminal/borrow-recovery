@@ -13,7 +13,7 @@ import {
   type MorphoParityMarketConfig,
 } from "@/lib/protocols/morphoBackendParity";
 
-import { ButtonSpinner } from "./ButtonSpinner";
+import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 type MorphoAction = "withdraw" | "repay";
 
@@ -113,6 +113,19 @@ export function MorphoRescueActions(props: {
     }
   }, [amountInput, selectedDecimals, useMax]);
 
+  const buttonLabel = useMemo(() => {
+    if (!isSubmitting) return "Execute Morpho action via Kernel";
+
+    const actionVerb = action === "withdraw" ? "withdraw" : "repay";
+    return getPendingButtonLabel(status, {
+      preparing: `Preparing ${actionVerb}…`,
+      waitingForWallet: `Confirm ${actionVerb} in wallet…`,
+      submitting: `Submitting ${actionVerb}…`,
+      confirming: `Confirming ${actionVerb}…`,
+      refreshing: "Refreshing positions…",
+    });
+  }, [action, isSubmitting, status]);
+
   return (
     <section className="mt-4 rounded-2xl border border-[var(--line)] bg-[var(--panel-subtle)] p-5">
       <h3 className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
@@ -173,7 +186,8 @@ export function MorphoRescueActions(props: {
 
         <button
           type="button"
-          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+          className="inline-flex h-11 w-fit items-center justify-center gap-2 rounded-lg bg-zinc-900 px-5 text-sm font-semibold text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-50"
+          aria-busy={isSubmitting}
           disabled={isSubmitting}
           onClick={async () => {
             if (isSubmitting) return;
@@ -257,7 +271,7 @@ export function MorphoRescueActions(props: {
           }}
         >
           {isSubmitting ? <ButtonSpinner /> : null}
-          <span>{isSubmitting ? "Submitting…" : "Execute Morpho action via Kernel"}</span>
+          <span>{buttonLabel}</span>
         </button>
 
         {action === "repay" && useMax ? (

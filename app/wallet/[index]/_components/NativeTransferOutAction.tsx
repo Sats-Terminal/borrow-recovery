@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   estimateKernelUserOperationFeeV07,
@@ -10,7 +10,7 @@ import type { SupportedChainId } from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
 import { encodeKernelExecuteCalls } from "@/lib/protocols/kernel";
 
-import { ButtonSpinner } from "./ButtonSpinner";
+import { ButtonSpinner, getPendingButtonLabel } from "./ButtonSpinner";
 import { waitForUserOpReceipt } from "./waitForUserOpReceipt";
 
 export function NativeTransferOutAction(props: {
@@ -68,6 +68,17 @@ export function NativeTransferOutAction(props: {
   };
 
   const hasBalance = balance !== null && balance > 0n;
+  const buttonLabel = useMemo(() => {
+    if (!isSubmitting) return `Transfer max ${nativeSymbol} to connected wallet`;
+
+    return getPendingButtonLabel(status, {
+      preparing: `Preparing ${nativeSymbol} transfer…`,
+      waitingForWallet: `Confirm ${nativeSymbol} transfer in wallet…`,
+      submitting: `Submitting ${nativeSymbol} transfer…`,
+      confirming: `Confirming ${nativeSymbol} transfer…`,
+      refreshing: "Refreshing positions…",
+    });
+  }, [isSubmitting, nativeSymbol, status]);
 
   return (
     <div className="mt-3 flex flex-col gap-2">
@@ -75,7 +86,8 @@ export function NativeTransferOutAction(props: {
         <>
           <button
             type="button"
-            className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-zinc-900 px-4 text-xs font-semibold text-white hover:bg-zinc-700 disabled:cursor-wait disabled:opacity-50"
+            aria-busy={isSubmitting}
             disabled={isSubmitting}
             onClick={async () => {
               if (isSubmitting) return;
@@ -163,7 +175,7 @@ export function NativeTransferOutAction(props: {
             }}
           >
             {isSubmitting ? <ButtonSpinner /> : null}
-            <span>{isSubmitting ? "Submitting…" : `Transfer max ${nativeSymbol} to connected wallet`}</span>
+            <span>{buttonLabel}</span>
           </button>
           <p className="text-xs text-[var(--muted)]">
             Transfers the full balance minus the estimated UserOperation gas cost at submission time.
