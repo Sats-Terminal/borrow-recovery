@@ -49,14 +49,16 @@ cp .env.example .env
 Recommended `.env` values:
 
 ```bash
+NEXT_PUBLIC_THIRDWEB_CLIENT_ID=your_thirdweb_client_id
 NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_api_key
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 ```
 
 If you do not set the WalletConnect value, injected wallets still work.
 
-The Alchemy key is optional but recommended. When set, the wallet page uses it as the default chain RPC and only reveals the manual RPC field if that endpoint stops responding.
-You still only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
+The thirdweb client ID is optional but preferred. When set, the wallet page uses thirdweb as the default chain RPC and only reveals the manual RPC field if that endpoint stops responding.
+If thirdweb is unavailable, the UI tells the user to paste an Alchemy HTTPS endpoint as the fallback. If no thirdweb client ID is set, the app falls back to Alchemy when present, then to the public chain RPCs in `lib/chains.ts`.
+Use a public thirdweb client ID here, not a secret key. You still only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
 
 ### 3. Run
 
@@ -131,6 +133,7 @@ You receive this wallet ID in the loan activation email sent to your email addre
   - A full bundler URL (example: `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`)
 - Rescue action buttons stay disabled until this input is valid.
 - The chain RPC field is normally hidden. It appears only if the default RPC for the selected chain is not responding, or if you already entered a custom override.
+- Default RPC priority is: thirdweb client ID from `.env` -> Alchemy key from `.env` -> public chain RPC.
 
 ### 5. Run rescue actions
 

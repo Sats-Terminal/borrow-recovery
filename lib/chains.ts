@@ -6,6 +6,7 @@ import {
 } from "@bgd-labs/aave-address-book";
 
 export type SupportedChainId = 1 | 8453 | 42161 | 56;
+export type DefaultRpcProvider = "thirdweb" | "alchemy" | "public";
 
 export type ChainConfig = {
   id: SupportedChainId;
@@ -22,28 +23,44 @@ export type ChainConfig = {
   morphoBlueAddress: `0x${string}` | null;
 };
 
-export const hasAlchemyApiKey = Boolean(process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim());
+const thirdwebClientId =
+  process.env.NEXT_PUBLIC_THIRDWEB_CLIENT_ID?.trim() ||
+  process.env.NEXT_PUBLIC_THIRDWEB_API_KEY?.trim() ||
+  null;
+const alchemyApiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim() || null;
+
+export const hasThirdwebClientId = Boolean(thirdwebClientId);
+export const hasAlchemyApiKey = Boolean(alchemyApiKey);
+export const defaultRpcProvider: DefaultRpcProvider = hasThirdwebClientId
+  ? "thirdweb"
+  : hasAlchemyApiKey
+    ? "alchemy"
+    : "public";
+
+function getThirdwebRpcUrl(chainId: SupportedChainId): string | null {
+  if (!thirdwebClientId) return null;
+  return `https://${chainId}.rpc.thirdweb.com/${thirdwebClientId}`;
+}
 
 function getAlchemyRpcUrl(chainId: SupportedChainId): string | null {
-  const apiKey = process.env.NEXT_PUBLIC_ALCHEMY_API_KEY?.trim();
-  if (!apiKey) return null;
+  if (!alchemyApiKey) return null;
 
   switch (chainId) {
     case 1:
-      return `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`;
+      return `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
     case 8453:
-      return `https://base-mainnet.g.alchemy.com/v2/${apiKey}`;
+      return `https://base-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
     case 42161:
-      return `https://arb-mainnet.g.alchemy.com/v2/${apiKey}`;
+      return `https://arb-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
     case 56:
-      return `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`;
+      return `https://bnb-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
     default:
       return null;
   }
 }
 
 function resolveDefaultRpcUrl(chainId: SupportedChainId, fallbackRpcUrl: string): string {
-  return getAlchemyRpcUrl(chainId) ?? fallbackRpcUrl;
+  return getThirdwebRpcUrl(chainId) ?? getAlchemyRpcUrl(chainId) ?? fallbackRpcUrl;
 }
 
 export const SUPPORTED_CHAINS: readonly ChainConfig[] = [

@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CHAIN_ASSETS } from "@/lib/assets";
-import { getChainConfig, hasAlchemyApiKey, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
+import { defaultRpcProvider, getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
 import { deriveKernelAddressV3_3FromEOA } from "@/lib/kernel/deriveKernelAddress";
 import { fetchAaveUserSummaryWithBackendLogic } from "@/lib/protocols/aaveBackendParity";
@@ -77,6 +77,28 @@ function resolveChainRpcUrl(
 
   const override = customRpcUrls[chainId]?.trim();
   return override && isValidHttpUrl(override) ? override : chain.rpcUrl;
+}
+
+function getDefaultRpcLabel(): string {
+  switch (defaultRpcProvider) {
+    case "thirdweb":
+      return "thirdweb RPC";
+    case "alchemy":
+      return "Alchemy RPC";
+    default:
+      return "default RPC";
+  }
+}
+
+function getDefaultRpcUnavailableMessage(message?: string | null): string {
+  const nextStep =
+    defaultRpcProvider === "thirdweb"
+      ? "Paste an Alchemy RPC URL to continue."
+      : "Paste a custom RPC URL to continue.";
+
+  return message
+    ? `The ${getDefaultRpcLabel()} is not responding: ${message} ${nextStep}`
+    : `The ${getDefaultRpcLabel()} is not responding. ${nextStep}`;
 }
 
 function getRpcInputPlaceholder(chainId: SupportedChainId): string {
@@ -530,9 +552,7 @@ export default function WalletDetailPage() {
         title: hasCustomRpcInput ? "RPC URL unavailable" : `${chain?.name ?? "Chain"} RPC unavailable`,
         description: hasCustomRpcInput
           ? (selectedRpcHealth.message ?? "The custom RPC URL is not responding. Fix it or replace it before continuing.")
-          : (selectedRpcHealth.message
-              ? `The default RPC is not responding: ${selectedRpcHealth.message} Paste a custom RPC URL to continue.`
-              : "The default RPC is not responding. Paste a custom RPC URL to continue."),
+          : getDefaultRpcUnavailableMessage(selectedRpcHealth.message),
       });
       rpcInputRef.current?.focus();
       return false;
@@ -973,14 +993,11 @@ export default function WalletDetailPage() {
                       )
                     ) : (
                       <span className="text-xs text-red-600">
-                        {selectedRpcHealth.message
-                          ? `The default RPC is not responding: ${selectedRpcHealth.message}`
-                          : "The default RPC is not responding."}{" "}
-                        Paste a custom RPC URL to continue.
+                        {getDefaultRpcUnavailableMessage(selectedRpcHealth.message)}
                       </span>
                     )}
                     <span className="text-xs text-[var(--muted)]">
-                      Go to{" "}
+                      {defaultRpcProvider === "thirdweb" ? "If thirdweb keeps failing, go to " : "Need a replacement endpoint? Go to "}
                       <a
                         href="https://www.alchemy.com/dashboard"
                         target="_blank"
@@ -990,7 +1007,7 @@ export default function WalletDetailPage() {
                         Alchemy Dashboard
                       </a>
                       {" "}&rarr; sign in, open <strong>Apps</strong>, create a new app (or open an existing one),
-                      choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here.
+                      choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here. Any healthy HTTPS RPC URL also works.
                     </span>
                   </>
                 ) : (
@@ -1001,8 +1018,10 @@ export default function WalletDetailPage() {
                     <p className="mt-1 text-xs text-[var(--muted)]">
                       {selectedRpcHealth.status === "checking"
                         ? "The manual RPC field stays hidden unless this endpoint fails."
-                        : hasAlchemyApiKey
-                          ? `Using the Alchemy RPC from .env for ${chain?.name ?? "this chain"}. The manual RPC field will appear automatically if it stops responding.`
+                        : defaultRpcProvider === "thirdweb"
+                          ? `Using the thirdweb RPC from .env for ${chain?.name ?? "this chain"}. If it stops responding, the manual RPC field will appear so you can paste an Alchemy HTTPS endpoint.`
+                          : defaultRpcProvider === "alchemy"
+                            ? `Using the Alchemy RPC from .env for ${chain?.name ?? "this chain"}. The manual RPC field will appear automatically if it stops responding.`
                           : `Using the default ${chain?.name ?? "chain"} RPC configured for this app. The manual RPC field will appear automatically if it stops responding.`}
                     </p>
                   </div>
