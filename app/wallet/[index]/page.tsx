@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CHAIN_ASSETS } from "@/lib/assets";
-import { getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
+import { getChainConfig, hasAlchemyApiKey, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
 import { deriveKernelAddressV3_3FromEOA } from "@/lib/kernel/deriveKernelAddress";
 import { fetchAaveUserSummaryWithBackendLogic } from "@/lib/protocols/aaveBackendParity";
@@ -94,6 +94,75 @@ function getRpcInputPlaceholder(chainId: SupportedChainId): string {
   }
 }
 
+type RpcHealthState = {
+  status: "checking" | "healthy" | "unhealthy";
+  message: string | null;
+};
+
+async function probeRpcHealth(parameters: {
+  rpcUrl: string;
+  expectedChainId: SupportedChainId;
+  signal: AbortSignal;
+}): Promise<RpcHealthState> {
+  const { rpcUrl, expectedChainId, signal } = parameters;
+
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_chainId",
+      params: [],
+    }),
+    cache: "no-store",
+    signal,
+  });
+
+  if (!response.ok) {
+    return {
+      status: "unhealthy",
+      message: `RPC returned HTTP ${response.status}.`,
+    };
+  }
+
+  const payload = (await response.json()) as {
+    result?: string;
+    error?: { message?: string };
+  };
+  if (payload.error?.message) {
+    return {
+      status: "unhealthy",
+      message: payload.error.message,
+    };
+  }
+  if (typeof payload.result !== "string" || !payload.result.startsWith("0x")) {
+    return {
+      status: "unhealthy",
+      message: "RPC did not return a chain ID.",
+    };
+  }
+
+  const actualChainId = Number.parseInt(payload.result.slice(2), 16);
+  if (!Number.isFinite(actualChainId)) {
+    return {
+      status: "unhealthy",
+      message: "RPC returned an invalid chain ID.",
+    };
+  }
+  if (actualChainId !== expectedChainId) {
+    return {
+      status: "unhealthy",
+      message: `RPC responded for chain ${actualChainId}, not ${expectedChainId}.`,
+    };
+  }
+
+  return {
+    status: "healthy",
+    message: null,
+  };
+}
+
 function normalizeHealthFactor(value: string | bigint | null | undefined): number | null {
   if (value === null || value === undefined) return null;
 
@@ -178,6 +247,10 @@ export default function WalletDetailPage() {
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [zerodevInput, setZerodevInput] = useState("");
   const [customRpcUrls, setCustomRpcUrls] = useState<Partial<Record<SupportedChainId, string>>>({});
+  const [selectedRpcHealth, setSelectedRpcHealth] = useState<RpcHealthState>({
+    status: "checking",
+    message: null,
+  });
   const [toasts, setToasts] = useState<ActionToast[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshRequestIdRef = useRef(0);
@@ -207,11 +280,14 @@ export default function WalletDetailPage() {
   const assets = useMemo(() => CHAIN_ASSETS[selectedChainId], [selectedChainId]);
   const zeroDevInputTrimmed = zerodevInput.trim();
   const selectedRpcInput = customRpcUrls[selectedChainId] ?? "";
+  const hasCustomRpcInput = selectedRpcInput.trim().length > 0;
   const selectedRpcError = useMemo(() => {
     const trimmed = selectedRpcInput.trim();
     if (!trimmed) return null;
     return isValidHttpUrl(trimmed) ? null : "Enter a valid http(s) RPC URL.";
   }, [selectedRpcInput]);
+  const showRpcInput =
+    hasCustomRpcInput || Boolean(selectedRpcError) || selectedRpcHealth.status === "unhealthy";
   const zeroDevValidationError = useMemo(() => {
     if (!zeroDevInputTrimmed) return null;
     try {
@@ -233,10 +309,14 @@ export default function WalletDetailPage() {
       issues.push("Fix the ZeroDev Project ID / RPC URL before submitting actions.");
     }
 
-    if (!selectedRpcInput.trim()) {
-      issues.push(`Add a ${chain?.name ?? "chain"} RPC URL.`);
-    } else if (selectedRpcError) {
-      issues.push("Fix the chain RPC URL before submitting actions.");
+    if (selectedRpcError) {
+      issues.push("Fix the custom RPC URL before submitting actions.");
+    } else if (selectedRpcHealth.status === "unhealthy") {
+      issues.push(
+        hasCustomRpcInput
+          ? "Fix or replace the custom RPC URL before submitting actions."
+          : `Default ${chain?.name ?? "chain"} RPC is not responding. Add a custom RPC URL.`,
+      );
     }
 
     if (hasNoGas) {
@@ -244,7 +324,16 @@ export default function WalletDetailPage() {
     }
 
     return issues;
-  }, [chain?.name, chain?.nativeSymbol, hasNoGas, selectedRpcError, selectedRpcInput, zeroDevInputTrimmed, zeroDevValidationError]);
+  }, [
+    chain?.name,
+    chain?.nativeSymbol,
+    hasCustomRpcInput,
+    hasNoGas,
+    selectedRpcError,
+    selectedRpcHealth.status,
+    zeroDevInputTrimmed,
+    zeroDevValidationError,
+  ]);
 
   const bundlerUrl = useMemo(() => {
     if (!zeroDevInputTrimmed || zeroDevValidationError) return "";
@@ -298,6 +387,53 @@ export default function WalletDetailPage() {
   useEffect(() => {
     selectedChainIdRef.current = selectedChainId;
   }, [selectedChainId]);
+
+  useEffect(() => {
+    if (!chain?.rpcUrl) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4500);
+    setSelectedRpcHealth({
+      status: "checking",
+      message: null,
+    });
+
+    probeRpcHealth({
+      rpcUrl: chain.rpcUrl,
+      expectedChainId: selectedChainId,
+      signal: controller.signal,
+    })
+      .then((nextState) => {
+        if (!cancelled) {
+          setSelectedRpcHealth(nextState);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        if (error instanceof DOMException && error.name === "AbortError") {
+          setSelectedRpcHealth({
+            status: "unhealthy",
+            message: "RPC health check timed out.",
+          });
+          return;
+        }
+
+        setSelectedRpcHealth({
+          status: "unhealthy",
+          message: error instanceof Error ? error.message : "RPC health check failed.",
+        });
+      })
+      .finally(() => {
+        clearTimeout(timeout);
+      });
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [chain?.rpcUrl, selectedChainId]);
 
   // Keep wallet network aligned with the selected chain dropdown.
   useEffect(() => {
@@ -380,19 +516,23 @@ export default function WalletDetailPage() {
       return false;
     }
 
-    if (!selectedRpcInput.trim()) {
+    if (selectedRpcError) {
       notifyToast({
-        title: `${chain?.name ?? "Chain"} RPC URL required`,
-        description: "Paste a custom RPC URL from Alchemy, QuickNode, or your own node before executing rescue actions.",
+        title: "Fix your RPC URL",
+        description: selectedRpcError,
       });
       rpcInputRef.current?.focus();
       return false;
     }
 
-    if (selectedRpcError) {
+    if (selectedRpcHealth.status === "unhealthy") {
       notifyToast({
-        title: "Fix your RPC URL",
-        description: selectedRpcError,
+        title: hasCustomRpcInput ? "RPC URL unavailable" : `${chain?.name ?? "Chain"} RPC unavailable`,
+        description: hasCustomRpcInput
+          ? (selectedRpcHealth.message ?? "The custom RPC URL is not responding. Fix it or replace it before continuing.")
+          : (selectedRpcHealth.message
+              ? `The default RPC is not responding: ${selectedRpcHealth.message} Paste a custom RPC URL to continue.`
+              : "The default RPC is not responding. Paste a custom RPC URL to continue."),
       });
       rpcInputRef.current?.focus();
       return false;
@@ -407,7 +547,18 @@ export default function WalletDetailPage() {
     }
 
     return true;
-  }, [chain?.name, chain?.nativeSymbol, hasNoGas, notifyToast, selectedRpcError, selectedRpcInput, zeroDevInputTrimmed, zeroDevValidationError]);
+  }, [
+    chain?.name,
+    chain?.nativeSymbol,
+    hasCustomRpcInput,
+    hasNoGas,
+    notifyToast,
+    selectedRpcError,
+    selectedRpcHealth.message,
+    selectedRpcHealth.status,
+    zeroDevInputTrimmed,
+    zeroDevValidationError,
+  ]);
 
   const copyAddress = useCallback(() => {
     if (!kernelAddress || isCopying) return;
@@ -780,53 +931,83 @@ export default function WalletDetailPage() {
                 </span>
               </label>
 
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
                   {chain?.name ?? "Selected chain"} RPC URL
                 </span>
-                <input
-                  ref={rpcInputRef}
-                  className={`h-11 rounded-lg border px-3 text-sm outline-none focus:bg-white ${
-                    selectedRpcError
-                      ? "border-red-300 bg-red-50 focus:border-red-500"
-                      : "border-[var(--line)] bg-[var(--panel-subtle)] focus:border-zinc-900"
-                  }`}
-                  value={selectedRpcInput}
-                  onChange={(e) =>
-                    setCustomRpcUrls((current) => ({
-                      ...current,
-                      [selectedChainId]: e.target.value,
-                    }))
-                  }
-                  placeholder={getRpcInputPlaceholder(selectedChainId)}
-                />
-                {selectedRpcError ? (
-                  <span className="text-xs text-red-600">
-                    {selectedRpcError} Rescue actions will stay blocked until this is fixed.
-                  </span>
-                ) : selectedRpcInput.trim() ? (
-                  <span className="text-xs text-emerald-700">
-                    Custom RPC is ready for {chain?.name ?? "this chain"}.
-                  </span>
+                {showRpcInput ? (
+                  <>
+                    <input
+                      ref={rpcInputRef}
+                      className={`h-11 rounded-lg border px-3 text-sm outline-none focus:bg-white ${
+                        selectedRpcError || selectedRpcHealth.status === "unhealthy"
+                          ? "border-red-300 bg-red-50 focus:border-red-500"
+                          : "border-[var(--line)] bg-[var(--panel-subtle)] focus:border-zinc-900"
+                      }`}
+                      value={selectedRpcInput}
+                      onChange={(e) =>
+                        setCustomRpcUrls((current) => ({
+                          ...current,
+                          [selectedChainId]: e.target.value,
+                        }))
+                      }
+                      placeholder={getRpcInputPlaceholder(selectedChainId)}
+                    />
+                    {selectedRpcError ? (
+                      <span className="text-xs text-red-600">
+                        {selectedRpcError} Rescue actions will stay blocked until this is fixed.
+                      </span>
+                    ) : hasCustomRpcInput ? (
+                      selectedRpcHealth.status === "healthy" ? (
+                        <span className="text-xs text-emerald-700">
+                          Custom RPC is ready for {chain?.name ?? "this chain"}.
+                        </span>
+                      ) : selectedRpcHealth.status === "checking" ? (
+                        <span className="text-xs text-[var(--muted)]">Checking custom RPC…</span>
+                      ) : (
+                        <span className="text-xs text-red-600">
+                          {selectedRpcHealth.message
+                            ? `This RPC is not responding: ${selectedRpcHealth.message}`
+                            : "This RPC is not responding."}
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-xs text-red-600">
+                        {selectedRpcHealth.message
+                          ? `The default RPC is not responding: ${selectedRpcHealth.message}`
+                          : "The default RPC is not responding."}{" "}
+                        Paste a custom RPC URL to continue.
+                      </span>
+                    )}
+                    <span className="text-xs text-[var(--muted)]">
+                      Go to{" "}
+                      <a
+                        href="https://www.alchemy.com/dashboard"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-zinc-900 underline underline-offset-2"
+                      >
+                        Alchemy Dashboard
+                      </a>
+                      {" "}&rarr; sign in, open <strong>Apps</strong>, create a new app (or open an existing one),
+                      choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here.
+                    </span>
+                  </>
                 ) : (
-                  <span className="text-xs text-[var(--muted)]">
-                    Required before any rescue action can be submitted.
-                  </span>
+                  <div className="rounded-lg border border-[var(--line)] bg-[var(--panel-subtle)] px-3 py-3">
+                    <div className="text-sm font-medium text-zinc-900">
+                      {selectedRpcHealth.status === "checking" ? "Checking default RPC…" : "Default RPC is ready"}
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {selectedRpcHealth.status === "checking"
+                        ? "The manual RPC field stays hidden unless this endpoint fails."
+                        : hasAlchemyApiKey
+                          ? `Using the Alchemy RPC from .env for ${chain?.name ?? "this chain"}. The manual RPC field will appear automatically if it stops responding.`
+                          : `Using the default ${chain?.name ?? "chain"} RPC configured for this app. The manual RPC field will appear automatically if it stops responding.`}
+                    </p>
+                  </div>
                 )}
-                <span className="text-xs text-[var(--muted)]">
-                  Go to{" "}
-                  <a
-                    href="https://www.alchemy.com/dashboard"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="font-medium text-zinc-900 underline underline-offset-2"
-                  >
-                    Alchemy Dashboard
-                  </a>
-                  {" "}&rarr; sign in, open <strong>Apps</strong>, create a new app (or open an existing one),
-                  choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here.
-                </span>
-              </label>
+              </div>
             </div>
           </section>
 

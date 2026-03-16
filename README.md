@@ -43,19 +43,20 @@ This app is frontend-only:
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env
 ```
 
-If you want WalletConnect support, set in `.env.local`:
+Recommended `.env` values:
 
 ```bash
+NEXT_PUBLIC_ALCHEMY_API_KEY=your_alchemy_api_key
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 ```
 
-If you do not set this value, injected wallets still work.
+If you do not set the WalletConnect value, injected wallets still work.
 
-No API key is required for onchain position reads.
-You only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
+The Alchemy key is optional but recommended. When set, the wallet page uses it as the default chain RPC and only reveals the manual RPC field if that endpoint stops responding.
+You still only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
 
 ### 3. Run
 
@@ -129,6 +130,7 @@ You receive this wallet ID in the loan activation email sent to your email addre
   - A ZeroDev project ID, or
   - A full bundler URL (example: `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`)
 - Rescue action buttons stay disabled until this input is valid.
+- The chain RPC field is normally hidden. It appears only if the default RPC for the selected chain is not responding, or if you already entered a custom override.
 
 ### 5. Run rescue actions
 
@@ -176,7 +178,7 @@ Before executing actions:
   - Use chain selector and approve wallet switch prompt.
 
 - Action button disabled:
-  - Missing/invalid bundler input, invalid amount, or an action is already submitting.
+  - Missing/invalid bundler input, an unhealthy custom RPC override, invalid amount, or an action is already submitting.
 
 - `No gas` warning:
   - Send native gas token to the loan wallet address shown on the page.
