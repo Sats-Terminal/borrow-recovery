@@ -6,7 +6,7 @@ import {
 } from "@bgd-labs/aave-address-book";
 
 export type SupportedChainId = 1 | 8453 | 42161 | 56;
-export type DefaultRpcProvider = "thirdweb" | "alchemy" | "public";
+export type DefaultRpcProvider = "thirdweb" | "alchemy" | "none";
 
 export type ChainConfig = {
   id: SupportedChainId;
@@ -35,32 +35,33 @@ export const defaultRpcProvider: DefaultRpcProvider = hasThirdwebClientId
   ? "thirdweb"
   : hasAlchemyApiKey
     ? "alchemy"
-    : "public";
+    : "none";
 
 function getThirdwebRpcUrl(chainId: SupportedChainId): string | null {
   if (!thirdwebClientId) return null;
   return `https://${chainId}.rpc.thirdweb.com/${thirdwebClientId}`;
 }
 
-function getAlchemyRpcUrl(chainId: SupportedChainId): string | null {
-  if (!alchemyApiKey) return null;
-
+export function buildAlchemyRpcUrl(chainId: SupportedChainId, apiKey: string): string {
   switch (chainId) {
     case 1:
-      return `https://eth-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
+      return `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`;
     case 8453:
-      return `https://base-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
+      return `https://base-mainnet.g.alchemy.com/v2/${apiKey}`;
     case 42161:
-      return `https://arb-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
+      return `https://arb-mainnet.g.alchemy.com/v2/${apiKey}`;
     case 56:
-      return `https://bnb-mainnet.g.alchemy.com/v2/${alchemyApiKey}`;
-    default:
-      return null;
+      return `https://bnb-mainnet.g.alchemy.com/v2/${apiKey}`;
   }
 }
 
-function resolveDefaultRpcUrl(chainId: SupportedChainId, fallbackRpcUrl: string): string {
-  return getThirdwebRpcUrl(chainId) ?? getAlchemyRpcUrl(chainId) ?? fallbackRpcUrl;
+function getAlchemyRpcUrl(chainId: SupportedChainId): string | null {
+  if (!alchemyApiKey) return null;
+  return buildAlchemyRpcUrl(chainId, alchemyApiKey);
+}
+
+function resolveDefaultRpcUrl(chainId: SupportedChainId): string {
+  return getThirdwebRpcUrl(chainId) ?? getAlchemyRpcUrl(chainId) ?? "";
 }
 
 export const SUPPORTED_CHAINS: readonly ChainConfig[] = [
@@ -68,7 +69,7 @@ export const SUPPORTED_CHAINS: readonly ChainConfig[] = [
     id: 1,
     name: "Ethereum",
     nativeSymbol: "ETH",
-    rpcUrl: resolveDefaultRpcUrl(1, "https://rpc.ankr.com/eth"),
+    rpcUrl: resolveDefaultRpcUrl(1),
     explorerBaseUrl: "https://etherscan.io",
     aaveV3PoolAddress: AaveV3Ethereum.POOL as `0x${string}`,
     aaveV3WethGatewayAddress: AaveV3Ethereum.WETH_GATEWAY as `0x${string}`,
@@ -84,7 +85,7 @@ export const SUPPORTED_CHAINS: readonly ChainConfig[] = [
     id: 8453,
     name: "Base",
     nativeSymbol: "ETH",
-    rpcUrl: resolveDefaultRpcUrl(8453, "https://mainnet.base.org"),
+    rpcUrl: resolveDefaultRpcUrl(8453),
     explorerBaseUrl: "https://basescan.org",
     aaveV3PoolAddress: AaveV3Base.POOL as `0x${string}`,
     aaveV3WethGatewayAddress: AaveV3Base.WETH_GATEWAY as `0x${string}`,
@@ -100,7 +101,7 @@ export const SUPPORTED_CHAINS: readonly ChainConfig[] = [
     id: 42161,
     name: "Arbitrum",
     nativeSymbol: "ETH",
-    rpcUrl: resolveDefaultRpcUrl(42161, "https://arb1.arbitrum.io/rpc"),
+    rpcUrl: resolveDefaultRpcUrl(42161),
     explorerBaseUrl: "https://arbiscan.io",
     aaveV3PoolAddress: AaveV3Arbitrum.POOL as `0x${string}`,
     aaveV3WethGatewayAddress: AaveV3Arbitrum.WETH_GATEWAY as `0x${string}`,
@@ -118,7 +119,7 @@ export const SUPPORTED_CHAINS: readonly ChainConfig[] = [
     id: 56,
     name: "BNB Chain",
     nativeSymbol: "BNB",
-    rpcUrl: resolveDefaultRpcUrl(56, "https://bsc-dataseed.binance.org"),
+    rpcUrl: resolveDefaultRpcUrl(56),
     explorerBaseUrl: "https://bscscan.com",
     aaveV3PoolAddress: AaveV3BNB.POOL as `0x${string}`,
     aaveV3WethGatewayAddress: AaveV3BNB.WETH_GATEWAY as `0x${string}`,

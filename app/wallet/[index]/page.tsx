@@ -5,7 +5,13 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CHAIN_ASSETS } from "@/lib/assets";
-import { defaultRpcProvider, getChainConfig, SUPPORTED_CHAINS, type SupportedChainId } from "@/lib/chains";
+import {
+  buildAlchemyRpcUrl,
+  defaultRpcProvider,
+  getChainConfig,
+  SUPPORTED_CHAINS,
+  type SupportedChainId,
+} from "@/lib/chains";
 import type { Address, Hex } from "@/lib/eth/types";
 import { deriveKernelAddressV3_3FromEOA } from "@/lib/kernel/deriveKernelAddress";
 import { fetchAaveUserSummaryWithBackendLogic } from "@/lib/protocols/aaveBackendParity";
@@ -71,12 +77,20 @@ function isValidHttpUrl(value: string): boolean {
 function resolveChainRpcUrl(
   chainId: SupportedChainId,
   customRpcUrls: Partial<Record<SupportedChainId, string>>,
+  alchemyApiKey: string,
 ): string {
   const chain = getChainConfig(chainId);
   if (!chain) return "";
 
   const override = customRpcUrls[chainId]?.trim();
-  return override && isValidHttpUrl(override) ? override : chain.rpcUrl;
+  if (override && isValidHttpUrl(override)) return override;
+
+  const normalizedAlchemyApiKey = normalizeAlchemyApiKey(alchemyApiKey);
+  if (defaultRpcProvider === "none" && normalizedAlchemyApiKey) {
+    return buildAlchemyRpcUrl(chainId, normalizedAlchemyApiKey);
+  }
+
+  return chain.rpcUrl;
 }
 
 function getDefaultRpcLabel(): string {
@@ -86,7 +100,7 @@ function getDefaultRpcLabel(): string {
     case "alchemy":
       return "Alchemy RPC";
     default:
-      return "default RPC";
+      return "Alchemy RPC";
   }
 }
 
@@ -99,6 +113,24 @@ function getDefaultRpcUnavailableMessage(message?: string | null): string {
   return message
     ? `The ${getDefaultRpcLabel()} is not responding: ${message} ${nextStep}`
     : `The ${getDefaultRpcLabel()} is not responding. ${nextStep}`;
+}
+
+function normalizeAlchemyApiKey(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.includes("://") || /\s/.test(trimmed)) return null;
+  return trimmed;
+}
+
+function getAlchemyApiKeyError(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes("://")) {
+    return "Paste the Alchemy API key only, not the full HTTPS URL.";
+  }
+  if (/\s/.test(trimmed)) {
+    return "Alchemy API keys cannot contain spaces.";
+  }
+  return null;
 }
 
 function getRpcInputPlaceholder(chainId: SupportedChainId): string {
@@ -117,7 +149,7 @@ function getRpcInputPlaceholder(chainId: SupportedChainId): string {
 }
 
 type RpcHealthState = {
-  status: "checking" | "healthy" | "unhealthy";
+  status: "missing" | "checking" | "healthy" | "unhealthy";
   message: string | null;
 };
 
@@ -268,10 +300,14 @@ export default function WalletDetailPage() {
   const [isCopying, setIsCopying] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [zerodevInput, setZerodevInput] = useState("");
+  const [manualAlchemyApiKey, setManualAlchemyApiKey] = useState("");
   const [customRpcUrls, setCustomRpcUrls] = useState<Partial<Record<SupportedChainId, string>>>({});
   const [selectedRpcHealth, setSelectedRpcHealth] = useState<RpcHealthState>({
-    status: "checking",
-    message: null,
+    status: defaultRpcProvider === "none" ? "missing" : "checking",
+    message:
+      defaultRpcProvider === "none"
+        ? "Paste an Alchemy API key to generate the selected chain RPC URL."
+        : null,
   });
   const [toasts, setToasts] = useState<ActionToast[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -289,9 +325,9 @@ export default function WalletDetailPage() {
     if (!selectedChain) return null;
     return {
       ...selectedChain,
-      rpcUrl: resolveChainRpcUrl(selectedChainId, customRpcUrls),
+      rpcUrl: resolveChainRpcUrl(selectedChainId, customRpcUrls, manualAlchemyApiKey),
     };
-  }, [customRpcUrls, selectedChainId]);
+  }, [customRpcUrls, manualAlchemyApiKey, selectedChainId]);
 
   const kernelAddress = useMemo(() => {
     if (!owner) return null;
@@ -301,15 +337,22 @@ export default function WalletDetailPage() {
 
   const assets = useMemo(() => CHAIN_ASSETS[selectedChainId], [selectedChainId]);
   const zeroDevInputTrimmed = zerodevInput.trim();
+  const requiresAlchemyApiKey = defaultRpcProvider === "none";
   const selectedRpcInput = customRpcUrls[selectedChainId] ?? "";
   const hasCustomRpcInput = selectedRpcInput.trim().length > 0;
+  const manualAlchemyApiKeyError = useMemo(
+    () => (requiresAlchemyApiKey ? getAlchemyApiKeyError(manualAlchemyApiKey) : null),
+    [manualAlchemyApiKey, requiresAlchemyApiKey],
+  );
+  const hasManualAlchemyApiKey = Boolean(normalizeAlchemyApiKey(manualAlchemyApiKey));
   const selectedRpcError = useMemo(() => {
+    if (requiresAlchemyApiKey) return manualAlchemyApiKeyError;
     const trimmed = selectedRpcInput.trim();
     if (!trimmed) return null;
     return isValidHttpUrl(trimmed) ? null : "Enter a valid http(s) RPC URL.";
-  }, [selectedRpcInput]);
+  }, [manualAlchemyApiKeyError, requiresAlchemyApiKey, selectedRpcInput]);
   const showRpcInput =
-    hasCustomRpcInput || Boolean(selectedRpcError) || selectedRpcHealth.status === "unhealthy";
+    requiresAlchemyApiKey || hasCustomRpcInput || Boolean(selectedRpcError) || selectedRpcHealth.status === "unhealthy";
   const zeroDevValidationError = useMemo(() => {
     if (!zeroDevInputTrimmed) return null;
     try {
@@ -332,10 +375,20 @@ export default function WalletDetailPage() {
     }
 
     if (selectedRpcError) {
-      issues.push("Fix the custom RPC URL before submitting actions.");
+      issues.push(
+        requiresAlchemyApiKey
+          ? "Fix the Alchemy API key before submitting actions."
+          : "Fix the custom RPC URL before submitting actions.",
+      );
+    } else if (requiresAlchemyApiKey && !hasManualAlchemyApiKey) {
+      issues.push("Add an Alchemy API key before submitting actions.");
+    } else if (selectedRpcHealth.status === "missing") {
+      issues.push("Add an Alchemy API key before submitting actions.");
     } else if (selectedRpcHealth.status === "unhealthy") {
       issues.push(
-        hasCustomRpcInput
+        requiresAlchemyApiKey
+          ? "The Alchemy RPC derived from your API key is not responding."
+          : hasCustomRpcInput
           ? "Fix or replace the custom RPC URL before submitting actions."
           : `Default ${chain?.name ?? "chain"} RPC is not responding. Add a custom RPC URL.`,
       );
@@ -350,7 +403,9 @@ export default function WalletDetailPage() {
     chain?.name,
     chain?.nativeSymbol,
     hasCustomRpcInput,
+    hasManualAlchemyApiKey,
     hasNoGas,
+    requiresAlchemyApiKey,
     selectedRpcError,
     selectedRpcHealth.status,
     zeroDevInputTrimmed,
@@ -370,8 +425,10 @@ export default function WalletDetailPage() {
 
     (async () => {
       const checks = SUPPORTED_CHAINS.map(async (c) => {
+        const rpcUrl = resolveChainRpcUrl(c.id, customRpcUrls, manualAlchemyApiKey);
+        if (!rpcUrl) return null;
         try {
-          const res = await fetch(resolveChainRpcUrl(c.id, customRpcUrls), {
+          const res = await fetch(rpcUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -400,7 +457,7 @@ export default function WalletDetailPage() {
     })();
 
     return () => { cancelled = true; };
-  }, [customRpcUrls, kernelAddress]);
+  }, [customRpcUrls, kernelAddress, manualAlchemyApiKey]);
 
   useEffect(() => {
     manualChainSelectionRef.current = false;
@@ -411,7 +468,16 @@ export default function WalletDetailPage() {
   }, [selectedChainId]);
 
   useEffect(() => {
-    if (!chain?.rpcUrl) return;
+    if (!chain?.rpcUrl) {
+      setSelectedRpcHealth({
+        status: "missing",
+        message:
+          defaultRpcProvider === "none"
+            ? "Paste an Alchemy API key to generate the selected chain RPC URL."
+            : "No RPC URL is configured for this chain.",
+      });
+      return;
+    }
 
     let cancelled = false;
     const controller = new AbortController();
@@ -540,8 +606,18 @@ export default function WalletDetailPage() {
 
     if (selectedRpcError) {
       notifyToast({
-        title: "Fix your RPC URL",
+        title: requiresAlchemyApiKey ? "Fix your Alchemy API key" : "Fix your RPC URL",
         description: selectedRpcError,
+      });
+      rpcInputRef.current?.focus();
+      return false;
+    }
+
+    if (selectedRpcHealth.status === "missing") {
+      notifyToast({
+        title: "Alchemy API key required",
+        description:
+          selectedRpcHealth.message ?? "Paste an Alchemy API key before executing rescue actions.",
       });
       rpcInputRef.current?.focus();
       return false;
@@ -549,8 +625,14 @@ export default function WalletDetailPage() {
 
     if (selectedRpcHealth.status === "unhealthy") {
       notifyToast({
-        title: hasCustomRpcInput ? "RPC URL unavailable" : `${chain?.name ?? "Chain"} RPC unavailable`,
-        description: hasCustomRpcInput
+        title: requiresAlchemyApiKey
+          ? "Alchemy RPC unavailable"
+          : hasCustomRpcInput
+            ? "RPC URL unavailable"
+            : `${chain?.name ?? "Chain"} RPC unavailable`,
+        description: requiresAlchemyApiKey
+          ? (selectedRpcHealth.message ?? "The Alchemy RPC derived from your API key is not responding.")
+          : hasCustomRpcInput
           ? (selectedRpcHealth.message ?? "The custom RPC URL is not responding. Fix it or replace it before continuing.")
           : getDefaultRpcUnavailableMessage(selectedRpcHealth.message),
       });
@@ -571,6 +653,7 @@ export default function WalletDetailPage() {
     chain?.name,
     chain?.nativeSymbol,
     hasCustomRpcInput,
+    requiresAlchemyApiKey,
     hasNoGas,
     notifyToast,
     selectedRpcError,
@@ -631,12 +714,20 @@ export default function WalletDetailPage() {
     const refreshChain = refreshChainBase
       ? {
           ...refreshChainBase,
-          rpcUrl: resolveChainRpcUrl(refreshChainId, customRpcUrls),
+          rpcUrl: resolveChainRpcUrl(refreshChainId, customRpcUrls, manualAlchemyApiKey),
         }
       : null;
     const refreshAssets = CHAIN_ASSETS[refreshChainId];
     if (!refreshChain) {
       setError("Unsupported chain.");
+      return;
+    }
+    if (!refreshChain.rpcUrl) {
+      setError(
+        requiresAlchemyApiKey
+          ? `Paste an Alchemy API key to read ${refreshChain.name} positions.`
+          : `No RPC URL is configured for ${refreshChain.name}.`,
+      );
       return;
     }
     const isRequestStale = () => refreshRequestIdRef.current !== requestId;
@@ -953,7 +1044,7 @@ export default function WalletDetailPage() {
 
               <div className="flex flex-col gap-2">
                 <span className="font-mono text-xs font-medium uppercase tracking-[0.2em] text-[var(--muted)]">
-                  {chain?.name ?? "Selected chain"} RPC URL
+                  {requiresAlchemyApiKey ? "Alchemy API Key" : `${chain?.name ?? "Selected chain"} RPC URL`}
                 </span>
                 {showRpcInput ? (
                   <>
@@ -964,19 +1055,46 @@ export default function WalletDetailPage() {
                           ? "border-red-300 bg-red-50 focus:border-red-500"
                           : "border-[var(--line)] bg-[var(--panel-subtle)] focus:border-zinc-900"
                       }`}
-                      value={selectedRpcInput}
-                      onChange={(e) =>
+                      value={requiresAlchemyApiKey ? manualAlchemyApiKey : selectedRpcInput}
+                      onChange={(e) => {
+                        if (requiresAlchemyApiKey) {
+                          setManualAlchemyApiKey(e.target.value);
+                          return;
+                        }
+
                         setCustomRpcUrls((current) => ({
                           ...current,
                           [selectedChainId]: e.target.value,
-                        }))
+                        }));
+                      }}
+                      placeholder={
+                        requiresAlchemyApiKey
+                          ? "paste your Alchemy API key"
+                          : getRpcInputPlaceholder(selectedChainId)
                       }
-                      placeholder={getRpcInputPlaceholder(selectedChainId)}
                     />
                     {selectedRpcError ? (
                       <span className="text-xs text-red-600">
                         {selectedRpcError} Rescue actions will stay blocked until this is fixed.
                       </span>
+                    ) : requiresAlchemyApiKey ? (
+                      selectedRpcHealth.status === "healthy" ? (
+                        <span className="text-xs text-emerald-700">
+                          Alchemy RPC is ready for {chain?.name ?? "this chain"}.
+                        </span>
+                      ) : hasManualAlchemyApiKey && selectedRpcHealth.status === "checking" ? (
+                        <span className="text-xs text-[var(--muted)]">Checking Alchemy RPC…</span>
+                      ) : hasManualAlchemyApiKey && selectedRpcHealth.status === "unhealthy" ? (
+                        <span className="text-xs text-red-600">
+                          {selectedRpcHealth.message
+                            ? `The Alchemy RPC is not responding: ${selectedRpcHealth.message}`
+                            : "The Alchemy RPC is not responding."}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-[var(--muted)]">
+                          Paste an Alchemy API key to generate the selected chain RPC URL.
+                        </span>
+                      )
                     ) : hasCustomRpcInput ? (
                       selectedRpcHealth.status === "healthy" ? (
                         <span className="text-xs text-emerald-700">
@@ -997,7 +1115,11 @@ export default function WalletDetailPage() {
                       </span>
                     )}
                     <span className="text-xs text-[var(--muted)]">
-                      {defaultRpcProvider === "thirdweb" ? "If thirdweb keeps failing, go to " : "Need a replacement endpoint? Go to "}
+                      {requiresAlchemyApiKey
+                        ? "Go to "
+                        : defaultRpcProvider === "thirdweb"
+                          ? "If thirdweb keeps failing, go to "
+                          : "Need a replacement endpoint? Go to "}
                       <a
                         href="https://www.alchemy.com/dashboard"
                         target="_blank"
@@ -1007,7 +1129,9 @@ export default function WalletDetailPage() {
                         Alchemy Dashboard
                       </a>
                       {" "}&rarr; sign in, open <strong>Apps</strong>, create a new app (or open an existing one),
-                      choose {chain?.name ?? "your chain"}, then open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here. Any healthy HTTPS RPC URL also works.
+                      choose {chain?.name ?? "your chain"}, then {requiresAlchemyApiKey
+                        ? <>copy the <strong>API key</strong> and paste it here.</>
+                        : <>open the <strong>Endpoints</strong> tab and copy the <strong>HTTPS</strong> URL here. Any healthy HTTPS RPC URL also works.</>}
                     </span>
                   </>
                 ) : (
@@ -1022,7 +1146,7 @@ export default function WalletDetailPage() {
                           ? `Using the thirdweb RPC from .env for ${chain?.name ?? "this chain"}. If it stops responding, the manual RPC field will appear so you can paste an Alchemy HTTPS endpoint.`
                           : defaultRpcProvider === "alchemy"
                             ? `Using the Alchemy RPC from .env for ${chain?.name ?? "this chain"}. The manual RPC field will appear automatically if it stops responding.`
-                          : `Using the default ${chain?.name ?? "chain"} RPC configured for this app. The manual RPC field will appear automatically if it stops responding.`}
+                            : `No default RPC is configured from .env. Paste an Alchemy API key to continue.`}
                     </p>
                   </div>
                 )}

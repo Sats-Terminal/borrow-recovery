@@ -57,7 +57,7 @@ NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_walletconnect_project_id
 If you do not set the WalletConnect value, injected wallets still work.
 
 The thirdweb client ID is optional but preferred. When set, the wallet page uses thirdweb as the default chain RPC and only reveals the manual RPC field if that endpoint stops responding.
-If thirdweb is unavailable, the UI tells the user to paste an Alchemy HTTPS endpoint as the fallback. If no thirdweb client ID is set, the app falls back to Alchemy when present, then to the public chain RPCs in `lib/chains.ts`.
+If thirdweb is unavailable, the UI tells the user to paste an Alchemy HTTPS endpoint as the fallback. If neither thirdweb nor Alchemy is configured in `.env`, the wallet page shows an Alchemy API key field immediately and does not fall back to public RPCs.
 Use a public thirdweb client ID here, not a secret key. You still only need a ZeroDev project/bundler value when you want to submit rescue UserOperations.
 
 ### 3. Run
@@ -133,7 +133,8 @@ You receive this wallet ID in the loan activation email sent to your email addre
   - A full bundler URL (example: `https://rpc.zerodev.app/api/v3/<project-id>/chain/<chain-id>`)
 - Rescue action buttons stay disabled until this input is valid.
 - The chain RPC field is normally hidden. It appears only if the default RPC for the selected chain is not responding, or if you already entered a custom override.
-- Default RPC priority is: thirdweb client ID from `.env` -> Alchemy key from `.env` -> public chain RPC.
+- If neither thirdweb nor Alchemy is configured in `.env`, the wallet page shows an **Alchemy API Key** field immediately.
+- Default RPC priority is: thirdweb client ID from `.env` -> Alchemy key from `.env` -> pasted Alchemy API key in the wallet UI. No public RPC fallback.
 
 ### 5. Run rescue actions
 
@@ -181,7 +182,7 @@ Before executing actions:
   - Use chain selector and approve wallet switch prompt.
 
 - Action button disabled:
-  - Missing/invalid bundler input, an unhealthy custom RPC override, invalid amount, or an action is already submitting.
+  - Missing/invalid bundler input, missing/invalid Alchemy API key or custom RPC override, invalid amount, or an action is already submitting.
 
 - `No gas` warning:
   - Send native gas token to the loan wallet address shown on the page.
@@ -190,7 +191,7 @@ Before executing actions:
   - Click **Load positions** again.
   - Check browser console for `Morpho summary fetch failed` to see exact read-path failure details.
   - Current logic tries:
-    1. Public RPC read (backend-style)
+    1. Configured RPC read (backend-style)
     2. Wallet provider read fallback
     3. Raw onchain contract read fallback
 
